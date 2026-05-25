@@ -71,7 +71,8 @@ async function fetchAll() {
   if (!todayGame) return { game: null, standings, nextGame };
 
   const status = todayGame.status?.abstractGameState;
-  const pk = todayGame.gamePk; // numeric ID e.g. 746532
+  const pk = todayGame.gamePk;
+  console.log("STATUS:", status, "| detailedState:", todayGame.status?.detailedState, "| codedGameState:", todayGame.status?.codedGameState, "| PK:", pk);
   const homeAbbr = todayGame.teams.home.team.abbreviation;
   const awayAbbr = todayGame.teams.away.team.abbreviation;
   const homeTeamName = todayGame.teams.home.team.name;
