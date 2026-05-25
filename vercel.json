@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/api/mlb", "destination": "/api/mlb.js" }
+  ]
+}
