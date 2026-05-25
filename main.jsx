@@ -115,17 +115,20 @@ async function fetchAll() {
     for (const [side, abbr] of [["home", homeAbbr], ["away", awayAbbr]]) {
       const t = bs.teams?.[side];
       if (!t) continue;
-      (t.battingOrder || []).forEach(pid => {
+      // Use battingOrder for lineup order, fall back to batters array
+      const orderIds = t.battingOrder?.length ? t.battingOrder : (t.batters || []);
+      orderIds.forEach(pid => {
         const p = t.players?.[`ID${pid}`];
         if (!p) return;
         const s = p.stats?.batting || {};
+        if ((s.atBats ?? 0) === 0 && !t.battingOrder?.length) return;
         batters[abbr].push({ name:p.person.fullName, position:p.position?.abbreviation||"", ab:s.atBats??0, h:s.hits??0, hr:s.homeRuns??0, rbi:s.rbi??0, r:s.runs??0 });
       });
       (t.pitchers || []).forEach(pid => {
         const p = t.players?.[`ID${pid}`];
         if (!p) return;
         const s = p.stats?.pitching || {};
-        if (!s.inningsPitched) return; // skip batters accidentally in pitcher list
+        if (!s.inningsPitched) return;
         pitchers[abbr].push({ name:p.person.fullName, ip:s.inningsPitched??"0.0", k:s.strikeOuts??0, bb:s.baseOnBalls??0, er:s.earnedRuns??0, status:t.activePitcher?.id===pid?"active":"done" });
       });
     }
@@ -369,7 +372,7 @@ export default function GiantsScoreboard() {
   const standings = data?.standings || [];
   const nextGame  = data?.nextGame  || null;
   const isLive    = game?.status === "inprogress";
-  const showGame  = isLive;
+  const showGame  = game?.status === "inprogress" || game?.status === "complete";
   const homeAbbr  = game?.home || "SF";
   const awayAbbr  = game?.away || "AZ";
   const homeScore = game?.score?.[homeAbbr] ?? 0;
