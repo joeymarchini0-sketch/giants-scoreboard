@@ -41,7 +41,7 @@ async function fetchAll() {
   }));
 
   // Today's game
-  const schData = await mlb(`/schedule?sportId=1&teamId=${SF_ID}&date=${today}&hydrate=linescore`);
+  const schData = await mlb(`/schedule?sportId=1&teamId=${SF_ID}&date=${today}&hydrate=linescore,boxscore`);
   const todayGames = schData.dates?.[0]?.games || [];
   const todayGame  = todayGames[0] || null;
 
@@ -82,8 +82,8 @@ async function fetchAll() {
     home: homeAbbr, away: awayAbbr,
     homeTeamName, awayTeamName,
     score: {
-      [homeAbbr]: todayGame.teams.home.score ?? 0,
-      [awayAbbr]: todayGame.teams.away.score ?? 0,
+      [homeAbbr]: todayGame.teams.home.score ?? todayGame.linescore?.teams?.home?.runs ?? 0,
+      [awayAbbr]: todayGame.teams.away.score ?? todayGame.linescore?.teams?.away?.runs ?? 0,
     },
   };
 
@@ -105,6 +105,9 @@ async function fetchAll() {
       [homeAbbr]: { runs: ls.teams?.home?.runs ?? 0, hits: ls.teams?.home?.hits ?? 0, errors: ls.teams?.home?.errors ?? 0 },
       [awayAbbr]: { runs: ls.teams?.away?.runs ?? 0, hits: ls.teams?.away?.hits ?? 0, errors: ls.teams?.away?.errors ?? 0 },
     };
+    // Override score with definitive linescore values
+    baseGame.score[homeAbbr] = ls.teams?.home?.runs ?? baseGame.score[homeAbbr];
+    baseGame.score[awayAbbr] = ls.teams?.away?.runs ?? baseGame.score[awayAbbr];
 
     const batters  = { [homeAbbr]: [], [awayAbbr]: [] };
     const pitchers = { [homeAbbr]: [], [awayAbbr]: [] };
