@@ -376,7 +376,7 @@ export default function GiantsScoreboard() {
   const standings = data?.standings || [];
   const nextGame  = data?.nextGame  || null;
   const isLive    = game?.status === "inprogress";
-  const showGame  = game?.status === "inprogress" || game?.status === "complete";
+  const showGame  = isLive;
   const homeAbbr  = game?.home || "SF";
   const awayAbbr  = game?.away || "AZ";
   const homeScore = game?.score?.[homeAbbr] ?? 0;
