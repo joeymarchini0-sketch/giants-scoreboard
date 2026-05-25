@@ -91,6 +91,16 @@ async function fetchAll() {
       mlb(`/game/${pk}/boxscore`),
     ]);
 
+    // DEBUG — remove after fixing
+    console.log("PK:", pk);
+    console.log("LS keys:", Object.keys(ls));
+    console.log("LS teams:", JSON.stringify(ls.teams));
+    console.log("LS innings[0]:", JSON.stringify(ls.innings?.[0]));
+    console.log("LS currentInning:", ls.currentInning);
+    console.log("BS teams keys:", Object.keys(bs.teams || {}));
+    console.log("BS home pitchers:", bs.teams?.home?.pitchers);
+    console.log("BS home battingOrder:", bs.teams?.home?.battingOrder);
+
     // Score comes from linescore.teams
     baseGame.score[homeAbbr] = ls.teams?.home?.runs ?? 0;
     baseGame.score[awayAbbr] = ls.teams?.away?.runs ?? 0;
