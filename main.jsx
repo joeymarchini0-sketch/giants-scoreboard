@@ -1,23 +1,36 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import ReactDOM from 'react-dom/client'
 
-
 const O = "#FD5A1E";
 const B = "#27251F";
 const SF_ID = 137;
 
-const MLB = "/api/mlb";
-
 const V = {
-  xs:"0.65vw", sm:"0.75vw", md:"0.95vw", lg:"1.2vw",
-  xl:"1.6vw", "2xl":"2.2vw", score:"7vw",
+  xs:"0.7vw", sm:"0.85vw", md:"1.05vw", lg:"1.35vw",
+  xl:"1.8vw", "2xl":"2.4vw", "3xl":"3.2vw", score:"7vw",
   p:"1.4vw", gap:"0.8vw",
   mono:"'Courier New', monospace",
   serif:"Georgia, 'Times New Roman', serif",
 };
 
-// In preview (Claude artifact), /api/mlb doesn't exist — detect and use seed data
-function isDeployed() { return typeof window !== "undefined" && !window.location.hostname.includes("claude") && window.location.hostname !== "localhost"; }
+// Team colors and MLB logo IDs
+const TEAM_META = {
+  LAD: { color:"#005A9C", bg:"rgba(0,90,156,0.12)", id:119, name:"Dodgers" },
+  SD:  { color:"#2F241D", bg:"rgba(47,36,29,0.2)",  id:135, name:"Padres" },
+  AZ:  { color:"#A71930", bg:"rgba(167,25,48,0.12)", id:109, name:"D-backs" },
+  SF:  { color:O,         bg:"rgba(253,90,30,0.13)", id:137, name:"Giants" },
+  COL: { color:"#7B4FBE", bg:"rgba(123,79,190,0.12)",id:115, name:"Rockies" },
+};
+
+function logoUrl(teamId) {
+  return `https://www.mlbstatic.com/team-logos/${teamId}.svg`;
+}
+
+function isDeployed() {
+  return typeof window !== "undefined" &&
+    !window.location.hostname.includes("claude") &&
+    window.location.hostname !== "localhost";
+}
 
 async function mlb(path) {
   if (!isDeployed()) throw new Error("PREVIEW_MODE");
@@ -29,23 +42,24 @@ async function mlb(path) {
 async function fetchAll() {
   const today = new Date().toISOString().slice(0,10);
 
-  // Standings
-  const stData = await mlb("/standings?leagueId=104&standingsTypes=regularSeason");
+  // Standings + streak
+  const stData = await mlb("/standings?leagueId=104&standingsTypes=regularSeason&hydrate=streak");
   const nlWest = stData.records?.find(r => r.division?.id === 203);
   const standings = (nlWest?.teamRecords || []).map((t, i) => ({
     rank: i + 1,
     abbr: t.team.abbreviation,
     name: t.team.name,
+    id:   t.team.id,
     w: t.wins,
     l: t.losses,
+    streak: t.streak?.streakCode || null, // e.g. "W3" or "L2"
   }));
 
-  // Today's game — use gamePk from schedule, then fetch linescore + boxscore separately
+  // Today's game
   const schData = await mlb(`/schedule?sportId=1&teamId=${SF_ID}&date=${today}`);
-  const todayGames = schData.dates?.[0]?.games || [];
-  const todayGame  = todayGames[0] || null;
+  const todayGame = schData.dates?.[0]?.games?.[0] || null;
 
-  // Next scheduled game (look ahead 14 days)
+  // Next scheduled game
   const future = new Date(); future.setDate(future.getDate() + 14);
   const fStr = future.toISOString().slice(0,10);
   const nextData = await mlb(`/schedule?sportId=1&teamId=${SF_ID}&startDate=${today}&endDate=${fStr}`);
@@ -53,55 +67,74 @@ async function fetchAll() {
   outer: for (const d of (nextData.dates || [])) {
     for (const g of (d.games || [])) {
       if (g.status?.abstractGameState !== "Final") {
-        const isHome = g.teams.home.team.id === SF_ID;
-        const opp = isHome ? g.teams.away.team.name : g.teams.home.team.name;
-        const loc = isHome ? "Oracle Park" : g.teams.home.team.name;
-        const dt  = new Date(g.gameDate);
+        const homeTeam = g.teams.home.team || g.teams.home;
+        const awayTeam = g.teams.away.team || g.teams.away;
+        const isHome = homeTeam.id === SF_ID;
         nextGame = {
-          opponent: opp,
-          location: loc,
-          date: dt.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:"America/Los_Angeles"}),
-          time: dt.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",timeZoneName:"short",timeZone:"America/Los_Angeles"}),
+          opponent: isHome ? (awayTeam.name || awayTeam.teamName) : (homeTeam.name || homeTeam.teamName),
+          opponentId: isHome ? (awayTeam.id) : (homeTeam.id),
+          location: isHome ? "Oracle Park" : (homeTeam.name || homeTeam.teamName),
+          date: new Date(g.gameDate).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:"America/Los_Angeles"}),
+          time: new Date(g.gameDate).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",timeZoneName:"short",timeZone:"America/Los_Angeles"}),
         };
         break outer;
       }
     }
   }
 
-  if (!todayGame) return { game: null, standings, nextGame };
+  // Last game result (most recent closed game)
+  const pastData = await mlb(`/schedule?sportId=1&teamId=${SF_ID}&startDate=2026-05-01&endDate=${today}&gameType=R`);
+  let lastGame = null;
+  const allPast = [];
+  for (const d of (pastData.dates || [])) {
+    for (const g of (d.games || [])) {
+      if (g.status?.abstractGameState === "Final") allPast.push(g);
+    }
+  }
+  if (allPast.length) {
+    const g = allPast[allPast.length - 1];
+    const homeTeam = g.teams.home.team || g.teams.home;
+    const awayTeam = g.teams.away.team || g.teams.away;
+    const isHome = homeTeam.id === SF_ID;
+    const sfScore  = isHome ? g.teams.home.score : g.teams.away.score;
+    const oppScore = isHome ? g.teams.away.score : g.teams.home.score;
+    const oppName  = isHome ? (awayTeam.name||awayTeam.teamName) : (homeTeam.name||homeTeam.teamName);
+    const oppId    = isHome ? awayTeam.id : homeTeam.id;
+    const won = sfScore > oppScore;
+    lastGame = { won, sfScore, oppScore, oppName, oppId };
+  }
 
-  const status = todayGame.status?.abstractGameState;
-  const pk = todayGame.gamePk;
-  // MLB API uses different paths depending on endpoint/game state
+  if (!todayGame) return { game: null, standings, nextGame, lastGame };
+
   const homeTeam = todayGame.teams.home.team || todayGame.teams.home;
   const awayTeam = todayGame.teams.away.team || todayGame.teams.away;
-  const homeAbbr = homeTeam.abbreviation || homeTeam.teamCode?.toUpperCase() || "SF";
-  const awayAbbr = awayTeam.abbreviation || awayTeam.teamCode?.toUpperCase() || "AZ";
-  const homeTeamName = homeTeam.name || homeTeam.teamName || "San Francisco Giants";
-  const awayTeamName = awayTeam.name || awayTeam.teamName || "Arizona Diamondbacks";
+  const homeAbbr = homeTeam.abbreviation || "SF";
+  const awayAbbr = awayTeam.abbreviation || "AZ";
+  const status = todayGame.status?.abstractGameState;
 
   const baseGame = {
     hasGame: true,
     status: status === "Live" ? "inprogress" : status === "Final" ? "complete" : "scheduled",
     home: homeAbbr, away: awayAbbr,
-    homeTeamName, awayTeamName,
+    homeTeamName: homeTeam.name || homeTeam.teamName,
+    awayTeamName: awayTeam.name || awayTeam.teamName,
+    homeTeamId: homeTeam.id,
+    awayTeamId: awayTeam.id,
     score: { [homeAbbr]: 0, [awayAbbr]: 0 },
   };
 
   if (status === "Live" || status === "Final") {
+    const pk = todayGame.gamePk;
     const [ls, bs] = await Promise.all([
       mlb(`/game/${pk}/linescore`),
       mlb(`/game/${pk}/boxscore`),
     ]);
-
-    // linescore uses "home"/"away" keys, not abbreviations — map correctly
 
     baseGame.score[homeAbbr] = ls.teams?.home?.runs ?? 0;
     baseGame.score[awayAbbr] = ls.teams?.away?.runs ?? 0;
 
     const scoring_by_period = {};
     (ls.innings || []).forEach(inn => {
-      // inn.home may be missing if bottom half not yet played
       scoring_by_period[inn.num] = {
         [homeAbbr]: inn.home?.runs !== undefined ? inn.home.runs : "X",
         [awayAbbr]: inn.away?.runs !== undefined ? inn.away.runs : "·",
@@ -109,8 +142,8 @@ async function fetchAll() {
     });
 
     const rhe = {
-      [homeAbbr]: { runs: ls.teams?.home?.runs ?? 0, hits: ls.teams?.home?.hits ?? 0, errors: ls.teams?.home?.errors ?? 0 },
-      [awayAbbr]: { runs: ls.teams?.away?.runs ?? 0, hits: ls.teams?.away?.hits ?? 0, errors: ls.teams?.away?.errors ?? 0 },
+      [homeAbbr]: { runs: ls.teams?.home?.runs??0, hits: ls.teams?.home?.hits??0, errors: ls.teams?.home?.errors??0 },
+      [awayAbbr]: { runs: ls.teams?.away?.runs??0, hits: ls.teams?.away?.hits??0, errors: ls.teams?.away?.errors??0 },
     };
 
     const batters  = { [homeAbbr]: [], [awayAbbr]: [] };
@@ -119,13 +152,11 @@ async function fetchAll() {
     for (const [side, abbr] of [["home", homeAbbr], ["away", awayAbbr]]) {
       const t = bs.teams?.[side];
       if (!t) continue;
-      // Use battingOrder for lineup order, fall back to batters array
       const orderIds = t.battingOrder?.length ? t.battingOrder : (t.batters || []);
       orderIds.forEach(pid => {
         const p = t.players?.[`ID${pid}`];
         if (!p) return;
         const s = p.stats?.batting || {};
-        if ((s.atBats ?? 0) === 0 && !t.battingOrder?.length) return;
         batters[abbr].push({ name:p.person.fullName, position:p.position?.abbreviation||"", ab:s.atBats??0, h:s.hits??0, hr:s.homeRuns??0, rbi:s.rbi??0, r:s.runs??0 });
       });
       (t.pitchers || []).forEach(pid => {
@@ -139,28 +170,29 @@ async function fetchAll() {
 
     let atBat=null, count=null, onBase=null, inning=null, inningHalf=null, outs=null;
     if (status === "Live") {
-      inning     = ls.currentInning;
+      inning = ls.currentInning;
       inningHalf = ls.isTopInning ? "top" : "bottom";
-      outs       = ls.outs ?? 0;
-      count      = { balls: ls.balls ?? 0, strikes: ls.strikes ?? 0 };
-      onBase     = { first:!!ls.offense?.first, second:!!ls.offense?.second, third:!!ls.offense?.third };
-      const bid  = ls.offense?.batter?.id;
+      outs = ls.outs ?? 0;
+      count = { balls: ls.balls??0, strikes: ls.strikes??0 };
+      onBase = { first:!!ls.offense?.first, second:!!ls.offense?.second, third:!!ls.offense?.third };
+      const bid = ls.offense?.batter?.id;
       if (bid) {
         const side = ls.isTopInning ? "away" : "home";
-        const bp   = bs.teams?.[side]?.players?.[`ID${bid}`];
+        const bp = bs.teams?.[side]?.players?.[`ID${bid}`];
         if (bp) {
           const s = bp.stats?.batting || {};
           atBat = { name:bp.person.fullName, position:bp.position?.abbreviation||"", ab:s.atBats??0, h:s.hits??0 };
         }
       }
     }
-    return { game: { ...baseGame, scoring_by_period, rhe, batters, pitchers, atBat, count, onBase, inning, inningHalf, outs }, standings, nextGame };
+    return { game: { ...baseGame, scoring_by_period, rhe, batters, pitchers, atBat, count, onBase, inning, inningHalf, outs }, standings, nextGame, lastGame };
   }
 
-  return { game: baseGame, standings, nextGame };
+  return { game: baseGame, standings, nextGame, lastGame };
 }
 
-// ── Diamond ───────────────────────────────────────────────────────────────────
+// ── Components ────────────────────────────────────────────────────────────────
+
 function Diamond({ onBase }) {
   const s=56,cx=28,cy=28,r=15;
   const bases=[{id:"second",x:cx,y:cy-r,active:onBase?.second},{id:"third",x:cx-r,y:cy,active:onBase?.third},{id:"first",x:cx+r,y:cy,active:onBase?.first}];
@@ -253,94 +285,168 @@ function Linescore({ scoring, rhe, homeAbbr, awayAbbr }) {
   );
 }
 
-function NextGameBanner({ nextGame }) {
-  if (!nextGame) return null;
+function TeamLogo({ teamId, size="2.8vw" }) {
+  const [err, setErr] = useState(false);
+  if (err) return <div style={{width:size,height:size}}/>;
   return (
-    <div style={{background:`linear-gradient(135deg,rgba(253,90,30,0.12),rgba(253,90,30,0.04))`,border:`1px solid rgba(253,90,30,0.3)`,borderRadius:4,padding:`2.2vw 2.8vw`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:"2vw"}}>
-      <div style={{flexShrink:0}}>
-        <div style={{fontSize:V.xs,letterSpacing:"0.2em",color:"rgba(255,255,255,0.35)",textTransform:"uppercase",fontFamily:V.mono,marginBottom:"0.5vw"}}>Next Game</div>
-        <div style={{fontSize:V.xs,color:"rgba(255,255,255,0.3)",fontFamily:V.mono}}>{nextGame.location}</div>
-      </div>
-      <div style={{flex:1,textAlign:"center"}}>
-        <div style={{fontSize:V["2xl"],fontWeight:900,color:"#fff",lineHeight:1}}>
-          <span style={{color:O}}>SF Giants</span>
-          <span style={{color:"rgba(255,255,255,0.25)",margin:`0 1vw`,fontSize:V.xl}}>vs</span>
-          <span>{nextGame.opponent}</span>
-        </div>
-      </div>
-      <div style={{flexShrink:0,textAlign:"right"}}>
-        <div style={{fontSize:V.xl,fontWeight:800,color:O,fontFamily:V.mono,marginBottom:"0.4vw"}}>{nextGame.time}</div>
-        <div style={{fontSize:V.md,color:"rgba(255,255,255,0.5)",fontFamily:V.mono}}>{nextGame.date}</div>
-      </div>
+    <img
+      src={logoUrl(teamId)}
+      alt=""
+      onError={()=>setErr(true)}
+      style={{width:size,height:size,objectFit:"contain",flexShrink:0}}
+    />
+  );
+}
+
+function StreakBadge({ streak }) {
+  if (!streak) return null;
+  const isWin = streak.startsWith("W");
+  const num = streak.slice(1);
+  return (
+    <div style={{
+      display:"inline-flex",alignItems:"center",gap:"0.2vw",
+      background: isWin ? "rgba(46,204,113,0.15)" : "rgba(231,76,60,0.15)",
+      border: `1px solid ${isWin ? "rgba(46,204,113,0.35)" : "rgba(231,76,60,0.35)"}`,
+      borderRadius:"0.3vw",
+      padding:"0.15vw 0.5vw",
+      fontFamily:V.mono,
+      fontSize:V.sm,
+      fontWeight:700,
+      color: isWin ? "#2ecc71" : "#e74c3c",
+      letterSpacing:"0.05em",
+    }}>
+      {isWin ? "W" : "L"}{num}
     </div>
   );
 }
 
-function NLWestStandings({ standings, nextGame }) {
-  const leader=standings[0];
-  const tc=a=>({LAD:"#005A9C",SD:"#2F241D",AZ:"#A71930",COL:"#33006F"}[a]||"rgba(255,255,255,0.3)");
-  const rp=`1.4vw 0.8vw`;
+function NLWestStandings({ standings, nextGame, lastGame }) {
+  const leader = standings[0];
+
   return (
-    <div style={{display:"flex",flexDirection:"column",height:"100%",padding:`2vw ${V.p} ${V.p}`}}>
-      <NextGameBanner nextGame={nextGame}/>
-      <div style={{display:"flex",alignItems:"baseline",gap:"0.8vw",margin:`1.8vw 0 1vw`}}>
+    <div style={{display:"flex",flexDirection:"column",height:"100%",padding:`1.5vw ${V.p} ${V.p}`}}>
+
+      {/* Next game + last game row */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:"1vw",marginBottom:"1.5vw",flexShrink:0}}>
+
+        {/* Next game banner */}
+        <div style={{background:`linear-gradient(135deg,rgba(253,90,30,0.13),rgba(253,90,30,0.04))`,border:`1px solid rgba(253,90,30,0.3)`,borderRadius:4,padding:`1.4vw 2vw`,display:"flex",alignItems:"center",gap:"1.5vw"}}>
+          <div style={{flexShrink:0}}>
+            <div style={{fontSize:V.xs,letterSpacing:"0.2em",color:"rgba(255,255,255,0.4)",textTransform:"uppercase",fontFamily:V.mono,marginBottom:"0.3vw"}}>Next Game</div>
+            <div style={{fontSize:V.xs,color:"rgba(255,255,255,0.3)",fontFamily:V.mono}}>{nextGame?.location}</div>
+          </div>
+          {nextGame?.opponentId && <TeamLogo teamId={nextGame.opponentId} size="3.5vw"/>}
+          <div style={{flex:1}}>
+            <div style={{fontSize:V["2xl"],fontWeight:900,color:"#fff",lineHeight:1.1}}>
+              <span style={{color:O}}>SF Giants</span>
+              <span style={{color:"rgba(255,255,255,0.3)",margin:"0 0.8vw",fontWeight:400,fontSize:V.xl}}>vs</span>
+              <span>{nextGame?.opponent}</span>
+            </div>
+          </div>
+          <div style={{flexShrink:0,textAlign:"right"}}>
+            <div style={{fontSize:V["2xl"],fontWeight:900,color:O,fontFamily:V.mono,lineHeight:1}}>{nextGame?.time}</div>
+            <div style={{fontSize:V.md,color:"rgba(255,255,255,0.5)",fontFamily:V.mono,marginTop:"0.3vw"}}>{nextGame?.date}</div>
+          </div>
+        </div>
+
+        {/* Last game result */}
+        {lastGame && (
+          <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",borderRadius:4,padding:`1.4vw 1.8vw`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"0.4vw",minWidth:"12vw"}}>
+            <div style={{fontSize:V.xs,letterSpacing:"0.2em",color:"rgba(255,255,255,0.35)",textTransform:"uppercase",fontFamily:V.mono}}>Last Game</div>
+            <div style={{display:"flex",alignItems:"center",gap:"0.8vw"}}>
+              <TeamLogo teamId={lastGame.oppId} size="2.2vw"/>
+              <div style={{fontSize:V["2xl"],fontWeight:900,fontFamily:V.mono,color:lastGame.won?"#2ecc71":"#e74c3c"}}>
+                {lastGame.won?"W":"L"}
+              </div>
+              <div style={{fontSize:V.lg,fontWeight:700,color:"#fff",fontFamily:V.mono}}>
+                {lastGame.sfScore}–{lastGame.oppScore}
+              </div>
+            </div>
+            <div style={{fontSize:V.xs,color:"rgba(255,255,255,0.3)",fontFamily:V.mono}}>vs {lastGame.oppName}</div>
+          </div>
+        )}
+      </div>
+
+      {/* Standings header */}
+      <div style={{display:"flex",alignItems:"baseline",gap:"0.8vw",marginBottom:"0.8vw",flexShrink:0}}>
         <div style={{fontSize:V["2xl"],fontWeight:900,color:"#fff"}}>NL West</div>
         <div style={{fontSize:V.xs,letterSpacing:"0.2em",color:"rgba(255,255,255,0.35)",textTransform:"uppercase",fontFamily:V.mono}}>Standings</div>
       </div>
-      <table style={{width:"100%",borderCollapse:"collapse",fontFamily:V.serif,flex:1}}>
-        <thead>
-          <tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
-            {["#","Team","W","L","PCT","GB"].map((h,i)=>(
-              <th key={h} style={{textAlign:i<2?"left":"center",padding:`0.4vw 0.8vw 0.8vw`,color:"rgba(255,255,255,0.3)",fontWeight:400,fontSize:V.xs,letterSpacing:"0.18em",fontFamily:V.mono,textTransform:"uppercase"}}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {standings.map((team,i)=>{
-            const isG=team.abbr==="SF";
-            const pct=(team.w/(team.w+team.l)).toFixed(3).replace(/^0/,"");
-            const gb=i===0?"—":(((leader.w-team.w)+(team.l-leader.l))/2).toFixed(1);
-            return (
-              <tr key={team.abbr} style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:isG?"rgba(253,90,30,0.07)":"transparent"}}>
-                <td style={{padding:rp,color:"rgba(255,255,255,0.25)",fontSize:V.sm,fontFamily:V.mono}}>{team.rank}</td>
-                <td style={{padding:rp}}>
-                  <div style={{display:"flex",alignItems:"center",gap:"0.8vw"}}>
-                    <div style={{width:"0.25vw",height:"2.4vw",borderRadius:2,background:isG?O:tc(team.abbr),boxShadow:isG?`0 0 8px ${O}`:"none",flexShrink:0}}/>
-                    <div>
-                      <div style={{fontSize:V.lg,fontWeight:isG?800:600,color:isG?"#fff":"rgba(255,255,255,0.75)",display:"flex",alignItems:"center",gap:"0.6vw"}}>
-                        {team.name}{isG&&<span style={{fontSize:V.xs,letterSpacing:"0.15em",color:O,fontFamily:V.mono}}>YOU ARE HERE</span>}
-                      </div>
-                      <div style={{fontSize:V.xs,color:"rgba(255,255,255,0.3)",fontFamily:V.mono,marginTop:"0.1vw"}}>{team.abbr}</div>
+
+      {/* Standings table */}
+      <div style={{flex:1,minHeight:0}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:V.serif}}>
+          <thead>
+            <tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
+              {["#","","Team","W","L","PCT","GB","STREAK"].map((h,i)=>(
+                <th key={i} style={{textAlign:i<3?"left":"center",padding:`0.4vw 0.8vw 0.7vw`,color:"rgba(255,255,255,0.3)",fontWeight:400,fontSize:V.xs,letterSpacing:"0.15em",fontFamily:V.mono,textTransform:"uppercase"}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {standings.map((team,i)=>{
+              const isG = team.abbr === "SF";
+              const meta = TEAM_META[team.abbr] || { color:"rgba(255,255,255,0.4)", bg:"transparent" };
+              const pct = (team.w/(team.w+team.l)).toFixed(3).replace(/^0/,"");
+              const gb = i===0?"—":(((leader.w-team.w)+(team.l-leader.l))/2).toFixed(1);
+              return (
+                <tr key={team.abbr} style={{
+                  borderBottom:"1px solid rgba(255,255,255,0.06)",
+                  background: isG ? "rgba(253,90,30,0.1)" : meta.bg,
+                  outline: isG ? `1px solid rgba(253,90,30,0.3)` : "none",
+                  outlineOffset: "-1px",
+                }}>
+                  {/* Rank */}
+                  <td style={{padding:"1.1vw 0.8vw",color:isG?O:"rgba(255,255,255,0.3)",fontSize:V.md,fontFamily:V.mono,fontWeight:isG?700:400}}>{team.rank}</td>
+
+                  {/* Logo */}
+                  <td style={{padding:"1.1vw 0.4vw 1.1vw 0.8vw",width:"3.5vw"}}>
+                    <TeamLogo teamId={team.id} size="3vw"/>
+                  </td>
+
+                  {/* Team name */}
+                  <td style={{padding:"1.1vw 0.8vw"}}>
+                    <div style={{fontSize:V.lg,fontWeight:isG?900:600,color:isG?"#fff":"rgba(255,255,255,0.8)",letterSpacing:"0.01em"}}>
+                      {meta.name || team.name}
                     </div>
-                  </div>
-                </td>
-                <td style={{textAlign:"center",padding:rp,fontSize:V.xl,fontWeight:700,color:isG?"#fff":"rgba(255,255,255,0.7)"}}>{team.w}</td>
-                <td style={{textAlign:"center",padding:rp,fontSize:V.xl,color:"rgba(255,255,255,0.45)"}}>{team.l}</td>
-                <td style={{textAlign:"center",padding:rp,fontFamily:V.mono,fontSize:V.md,color:isG?O:"rgba(255,255,255,0.55)",fontWeight:isG?700:400}}>{pct}</td>
-                <td style={{textAlign:"center",padding:rp}}>
-                  {gb==="—"?<span style={{color:"rgba(255,255,255,0.25)",fontFamily:V.mono,fontSize:V.md}}>—</span>
-                    :<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"0.5vw"}}>
-                      <div style={{width:Math.min(parseFloat(gb)*5,60),height:"0.35vw",borderRadius:2,background:isG?O:"rgba(255,255,255,0.2)",minWidth:4}}/>
-                      <span style={{fontFamily:V.mono,fontSize:V.sm,color:isG?O:"rgba(255,255,255,0.45)",minWidth:"1.8vw"}}>{gb}</span>
-                    </div>
-                  }
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                    {isG && <div style={{fontSize:V.xs,color:O,fontFamily:V.mono,letterSpacing:"0.1em",marginTop:"0.1vw"}}>YOUR TEAM</div>}
+                  </td>
+
+                  {/* W */}
+                  <td style={{textAlign:"center",padding:"1.1vw 0.8vw",fontSize:V.xl,fontWeight:800,color:isG?"#fff":"rgba(255,255,255,0.75)"}}>{team.w}</td>
+
+                  {/* L */}
+                  <td style={{textAlign:"center",padding:"1.1vw 0.8vw",fontSize:V.xl,color:"rgba(255,255,255,0.5)"}}>{team.l}</td>
+
+                  {/* PCT */}
+                  <td style={{textAlign:"center",padding:"1.1vw 0.8vw",fontFamily:V.mono,fontSize:V.md,color:isG?O:"rgba(255,255,255,0.6)",fontWeight:isG?700:400}}>{pct}</td>
+
+                  {/* GB */}
+                  <td style={{textAlign:"center",padding:"1.1vw 0.8vw",fontFamily:V.mono,fontSize:V.md,color:"rgba(255,255,255,0.45)"}}>
+                    {gb}
+                  </td>
+
+                  {/* Streak */}
+                  <td style={{textAlign:"center",padding:"1.1vw 0.8vw"}}>
+                    <StreakBadge streak={team.streak}/>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function GiantsScoreboard() {
-  const [data, setData]           = useState(null);
-  const [error, setError]         = useState(null);
+  const [data, setData]             = useState(null);
+  const [error, setError]           = useState(null);
   const [refreshing, setRefreshing] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
-  const [pulse, setPulse]         = useState(false);
+  const [pulse, setPulse]           = useState(false);
 
   const refresh = useCallback(async () => {
     setRefreshing(true); setError(null);
@@ -351,19 +457,19 @@ export default function GiantsScoreboard() {
       setPulse(true); setTimeout(()=>setPulse(false),600);
     } catch(e) {
       if (e.message === "PREVIEW_MODE") {
-        // Running in Claude artifact preview — show seed data
         setData({
           game: null,
           standings: [
-            { rank:1, abbr:"LAD", name:"Los Angeles Dodgers",  w:33, l:20 },
-            { rank:2, abbr:"SD",  name:"San Diego Padres",     w:31, l:21 },
-            { rank:3, abbr:"AZ",  name:"Arizona Diamondbacks", w:28, l:24 },
-            { rank:4, abbr:"SF",  name:"San Francisco Giants", w:22, l:31 },
-            { rank:5, abbr:"COL", name:"Colorado Rockies",     w:20, l:34 },
+            { rank:1, abbr:"LAD", name:"Los Angeles Dodgers",  id:119, w:33, l:20, streak:"W2" },
+            { rank:2, abbr:"SD",  name:"San Diego Padres",     id:135, w:31, l:21, streak:"L1" },
+            { rank:3, abbr:"AZ",  name:"Arizona Diamondbacks", id:109, w:29, l:24, streak:"W1" },
+            { rank:4, abbr:"SF",  name:"San Francisco Giants", id:137, w:22, l:32, streak:"L1" },
+            { rank:5, abbr:"COL", name:"Colorado Rockies",     id:115, w:20, l:34, streak:"L3" },
           ],
-          nextGame: { opponent:"Arizona Diamondbacks", date:"Mon May 25", time:"2:05 PM PDT", location:"Oracle Park" },
+          nextGame: { opponent:"Arizona Diamondbacks", opponentId:109, date:"Tue, May 26", time:"6:45 PM PDT", location:"Oracle Park" },
+          lastGame: { won:false, sfScore:2, oppScore:6, oppName:"Arizona Diamondbacks", oppId:109 },
         });
-        setError("Preview mode — deploy to Vercel for live data");
+        setError("Preview mode");
       } else {
         setError(e.message);
       }
@@ -375,6 +481,7 @@ export default function GiantsScoreboard() {
   const game      = data?.game;
   const standings = data?.standings || [];
   const nextGame  = data?.nextGame  || null;
+  const lastGame  = data?.lastGame  || null;
   const isLive    = game?.status === "inprogress";
   const showGame  = isLive;
   const homeAbbr  = game?.home || "SF";
@@ -388,13 +495,13 @@ export default function GiantsScoreboard() {
       <div style={{height:"0.4vw",background:`linear-gradient(90deg,${O},#c94510)`,flexShrink:0}}/>
 
       {/* Header */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:`0.8vw ${V.p}`,borderBottom:"1px solid rgba(255,255,255,0.07)",flexShrink:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:"0.6vw"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:`0.7vw ${V.p}`,borderBottom:"1px solid rgba(255,255,255,0.07)",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:"0.7vw"}}>
           <div style={{width:"0.7vw",height:"0.7vw",borderRadius:"50%",background:isLive?"#2ecc71":O,boxShadow:isLive?"0 0 10px #2ecc71":`0 0 8px ${O}`,animation:isLive?"livePulse 1.8s ease-in-out infinite":"none"}}/>
           <span style={{fontSize:V.sm,letterSpacing:"0.2em",color:isLive?"#2ecc71":O,fontFamily:V.mono,textTransform:"uppercase"}}>
             {refreshing&&!data?"Loading…":isLive?"Live · SF Giants":game?.status==="complete"?`Final · ${awayAbbr} ${awayScore} – ${homeAbbr} ${homeScore}`:"No Game In Progress"}
           </span>
-          {error&&<span style={{fontSize:V.xs,color:"#e74c3c",fontFamily:V.mono,marginLeft:"1vw"}}>⚠ {error}</span>}
+          {error&&error!=="Preview mode"&&<span style={{fontSize:V.xs,color:"rgba(253,90,30,0.5)",fontFamily:V.mono,marginLeft:"1vw"}}>⚠ {error}</span>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:"1.2vw"}}>
           <span style={{fontSize:V.sm,color:"rgba(255,255,255,0.25)",fontFamily:V.mono}}>{refreshing?"Refreshing…":lastUpdate?`Updated ${lastUpdate.toLocaleTimeString()}`:""}</span>
@@ -411,24 +518,25 @@ export default function GiantsScoreboard() {
             <div style={{fontSize:V.xl,color:O,fontFamily:V.mono,letterSpacing:"0.2em"}}>LOADING LIVE DATA…</div>
             <div style={{fontSize:V.sm,color:"rgba(255,255,255,0.3)",fontFamily:V.mono}}>Connecting to MLB Stats API</div>
           </div>
-        ):!data&&error?(
-          <div style={{height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"1.5vw"}}>
-            <div style={{fontSize:V.xl,color:"#e74c3c",fontFamily:V.mono}}>⚠ Connection Error</div>
-            <div style={{fontSize:V.md,color:"rgba(255,255,255,0.4)",fontFamily:V.mono,maxWidth:"40vw",textAlign:"center"}}>{error}</div>
-            <button onClick={refresh} style={{background:O,border:"none",color:"#fff",padding:`0.6vw 2vw`,borderRadius:3,fontSize:V.md,fontFamily:V.mono,letterSpacing:"0.1em",cursor:"pointer",textTransform:"uppercase"}}>Retry</button>
-          </div>
         ):showGame?(
           <div style={{height:"100%",display:"flex",flexDirection:"column",padding:V.p}}>
+            {/* Scores */}
             <div style={{display:"flex",alignItems:"center",marginBottom:V.p,flexShrink:0}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:V.xs,letterSpacing:"0.15em",color:"rgba(255,255,255,0.4)",textTransform:"uppercase",fontFamily:V.mono,marginBottom:"0.3vw"}}>Away</div>
-                <div style={{fontSize:V.lg,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:"0.5vw",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{game.awayTeamName}</div>
+              <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:"0.4vw"}}>
+                <div style={{fontSize:V.xs,letterSpacing:"0.15em",color:"rgba(255,255,255,0.4)",textTransform:"uppercase",fontFamily:V.mono}}>Away</div>
+                <div style={{display:"flex",alignItems:"center",gap:"0.8vw"}}>
+                  <TeamLogo teamId={game.awayTeamId} size="2.5vw"/>
+                  <div style={{fontSize:V.lg,fontWeight:700,color:"rgba(255,255,255,0.55)"}}>{game.awayTeamName}</div>
+                </div>
                 <div style={{fontSize:V.score,fontWeight:900,lineHeight:1,color:"rgba(255,255,255,0.75)",letterSpacing:"-0.03em",fontVariantNumeric:"tabular-nums"}}>{awayScore}</div>
               </div>
               <SituationPanel game={game}/>
-              <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"flex-end"}}>
-                <div style={{fontSize:V.xs,letterSpacing:"0.15em",color:"rgba(255,255,255,0.4)",textTransform:"uppercase",fontFamily:V.mono,marginBottom:"0.3vw"}}>Home</div>
-                <div style={{fontSize:V.lg,fontWeight:700,color:O,marginBottom:"0.5vw",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{game.homeTeamName}</div>
+              <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"0.4vw"}}>
+                <div style={{fontSize:V.xs,letterSpacing:"0.15em",color:"rgba(255,255,255,0.4)",textTransform:"uppercase",fontFamily:V.mono}}>Home</div>
+                <div style={{display:"flex",alignItems:"center",gap:"0.8vw"}}>
+                  <div style={{fontSize:V.lg,fontWeight:700,color:O}}>{game.homeTeamName}</div>
+                  <TeamLogo teamId={game.homeTeamId} size="2.5vw"/>
+                </div>
                 <div style={{fontSize:V.score,fontWeight:900,lineHeight:1,letterSpacing:"-0.03em",fontVariantNumeric:"tabular-nums",color:O,textShadow:homeW?`0 0 4vw rgba(253,90,30,0.5)`:"none"}}>{homeScore}</div>
               </div>
             </div>
@@ -488,13 +596,13 @@ export default function GiantsScoreboard() {
             </div>
           </div>
         ):(
-          <NLWestStandings standings={standings} nextGame={nextGame}/>
+          <NLWestStandings standings={standings} nextGame={nextGame} lastGame={lastGame}/>
         )}
       </div>
 
-      <div style={{padding:`0.6vw ${V.p}`,borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+      <div style={{padding:`0.5vw ${V.p}`,borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
         <span style={{fontSize:V.xs,color:"rgba(255,255,255,0.15)",fontFamily:V.mono,letterSpacing:"0.1em"}}>ORACLE PARK · SAN FRANCISCO · SF GIANTS</span>
-        <span style={{fontSize:V.xs,color:"rgba(255,255,255,0.15)",fontFamily:V.mono}}>Live data via MLB Stats API · No API key required</span>
+        <span style={{fontSize:V.xs,color:"rgba(255,255,255,0.15)",fontFamily:V.mono}}>Live via MLB Stats API · Refreshes every 30s</span>
       </div>
 
       <style>{`*{box-sizing:border-box;margin:0;padding:0}@keyframes livePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}`}</style>
