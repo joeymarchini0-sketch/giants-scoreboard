@@ -15,10 +15,10 @@ const V = {
 };
 
 // In preview (Claude artifact), /api/mlb doesn't exist — detect and use seed data
-const IS_DEPLOYED = !window.location.hostname.includes("claude") && window.location.hostname !== "localhost";
+function isDeployed() { return typeof window !== "undefined" && !window.location.hostname.includes("claude") && window.location.hostname !== "localhost"; }
 
 async function mlb(path) {
-  if (!IS_DEPLOYED) throw new Error("PREVIEW_MODE");
+  if (!isDeployed()) throw new Error("PREVIEW_MODE");
   const res = await fetch(`/api/mlb?path=${encodeURIComponent(path)}`);
   if (!res.ok) throw new Error(`MLB API ${res.status}: ${path}`);
   return res.json();
