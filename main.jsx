@@ -91,25 +91,16 @@ async function fetchAll() {
       mlb(`/game/${pk}/boxscore`),
     ]);
 
-    // DEBUG — remove after fixing
-    console.log("PK:", pk);
-    console.log("LS keys:", Object.keys(ls));
-    console.log("LS teams:", JSON.stringify(ls.teams));
-    console.log("LS innings[0]:", JSON.stringify(ls.innings?.[0]));
-    console.log("LS currentInning:", ls.currentInning);
-    console.log("BS teams keys:", Object.keys(bs.teams || {}));
-    console.log("BS home pitchers:", bs.teams?.home?.pitchers);
-    console.log("BS home battingOrder:", bs.teams?.home?.battingOrder);
-
-    // Score comes from linescore.teams
+    // linescore uses "home"/"away" keys, not abbreviations — map correctly
     baseGame.score[homeAbbr] = ls.teams?.home?.runs ?? 0;
     baseGame.score[awayAbbr] = ls.teams?.away?.runs ?? 0;
 
     const scoring_by_period = {};
     (ls.innings || []).forEach(inn => {
+      // inn.home may be missing if bottom half not yet played
       scoring_by_period[inn.num] = {
-        [homeAbbr]: inn.home?.runs ?? "X",
-        [awayAbbr]: inn.away?.runs ?? "·",
+        [homeAbbr]: inn.home?.runs !== undefined ? inn.home.runs : "X",
+        [awayAbbr]: inn.away?.runs !== undefined ? inn.away.runs : "·",
       };
     });
 
@@ -134,6 +125,7 @@ async function fetchAll() {
         const p = t.players?.[`ID${pid}`];
         if (!p) return;
         const s = p.stats?.pitching || {};
+        if (!s.inningsPitched) return; // skip batters accidentally in pitcher list
         pitchers[abbr].push({ name:p.person.fullName, ip:s.inningsPitched??"0.0", k:s.strikeOuts??0, bb:s.baseOnBalls??0, er:s.earnedRuns??0, status:t.activePitcher?.id===pid?"active":"done" });
       });
     }
