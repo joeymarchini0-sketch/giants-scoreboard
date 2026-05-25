@@ -72,11 +72,13 @@ async function fetchAll() {
 
   const status = todayGame.status?.abstractGameState;
   const pk = todayGame.gamePk;
-  console.log("STATUS:", status, "| detailedState:", todayGame.status?.detailedState, "| codedGameState:", todayGame.status?.codedGameState, "| PK:", pk);
-  const homeAbbr = todayGame.teams.home.team.abbreviation;
-  const awayAbbr = todayGame.teams.away.team.abbreviation;
-  const homeTeamName = todayGame.teams.home.team.name;
-  const awayTeamName = todayGame.teams.away.team.name;
+  // MLB API uses different paths depending on endpoint/game state
+  const homeTeam = todayGame.teams.home.team || todayGame.teams.home;
+  const awayTeam = todayGame.teams.away.team || todayGame.teams.away;
+  const homeAbbr = homeTeam.abbreviation || homeTeam.teamCode?.toUpperCase() || "SF";
+  const awayAbbr = awayTeam.abbreviation || awayTeam.teamCode?.toUpperCase() || "AZ";
+  const homeTeamName = homeTeam.name || homeTeam.teamName || "San Francisco Giants";
+  const awayTeamName = awayTeam.name || awayTeam.teamName || "Arizona Diamondbacks";
 
   const baseGame = {
     hasGame: true,
@@ -93,11 +95,9 @@ async function fetchAll() {
     ]);
 
     // linescore uses "home"/"away" keys, not abbreviations — map correctly
-    console.log("LS home runs:", ls.teams?.home?.runs, "LS away runs:", ls.teams?.away?.runs, "homeAbbr:", homeAbbr, "awayAbbr:", awayAbbr);
-    console.log("baseGame before score set:", JSON.stringify(baseGame.score));
+
     baseGame.score[homeAbbr] = ls.teams?.home?.runs ?? 0;
     baseGame.score[awayAbbr] = ls.teams?.away?.runs ?? 0;
-    console.log("baseGame after score set:", JSON.stringify(baseGame.score));
 
     const scoring_by_period = {};
     (ls.innings || []).forEach(inn => {
