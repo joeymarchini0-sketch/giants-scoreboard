@@ -93,8 +93,11 @@ async function fetchAll() {
     ]);
 
     // linescore uses "home"/"away" keys, not abbreviations — map correctly
+    console.log("LS home runs:", ls.teams?.home?.runs, "LS away runs:", ls.teams?.away?.runs, "homeAbbr:", homeAbbr, "awayAbbr:", awayAbbr);
+    console.log("baseGame before score set:", JSON.stringify(baseGame.score));
     baseGame.score[homeAbbr] = ls.teams?.home?.runs ?? 0;
     baseGame.score[awayAbbr] = ls.teams?.away?.runs ?? 0;
+    console.log("baseGame after score set:", JSON.stringify(baseGame.score));
 
     const scoring_by_period = {};
     (ls.innings || []).forEach(inn => {
