@@ -285,9 +285,16 @@ function Linescore({ scoring, rhe, homeAbbr, awayAbbr }) {
   );
 }
 
-function TeamLogo({ teamId, size="2.8vw" }) {
+function TeamLogo({ teamId, size="2.8vw", abbr="" }) {
   const [err, setErr] = useState(false);
-  if (err) return <div style={{width:size,height:size}}/>;
+  const meta = Object.values(TEAM_META).find(m=>m.id===teamId);
+  if (err) {
+    return (
+      <div style={{width:size,height:size,borderRadius:"50%",background:meta?.color||"rgba(255,255,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+        <span style={{fontSize:`calc(${size} * 0.38)`,fontWeight:900,color:"#fff",fontFamily:"'Courier New',monospace"}}>{abbr.slice(0,2)}</span>
+      </div>
+    );
+  }
   return (
     <img
       src={logoUrl(teamId)}
@@ -335,7 +342,7 @@ function NLWestStandings({ standings, nextGame, lastGame }) {
             <div style={{fontSize:V.xs,letterSpacing:"0.2em",color:"rgba(255,255,255,0.4)",textTransform:"uppercase",fontFamily:V.mono,marginBottom:"0.3vw"}}>Next Game</div>
             <div style={{fontSize:V.xs,color:"rgba(255,255,255,0.3)",fontFamily:V.mono}}>{nextGame?.location}</div>
           </div>
-          {nextGame?.opponentId && <TeamLogo teamId={nextGame.opponentId} size="3.5vw"/>}
+
           <div style={{flex:1}}>
             <div style={{fontSize:V["2xl"],fontWeight:900,color:"#fff",lineHeight:1.1}}>
               <span style={{color:O}}>SF Giants</span>
@@ -401,7 +408,7 @@ function NLWestStandings({ standings, nextGame, lastGame }) {
 
                   {/* Logo */}
                   <td style={{padding:"1.1vw 0.4vw 1.1vw 0.8vw",width:"3.5vw"}}>
-                    <TeamLogo teamId={team.id} size="3vw"/>
+                    <TeamLogo teamId={team.id} size="3vw" abbr={team.abbr}/>
                   </td>
 
                   {/* Team name */}
@@ -499,7 +506,7 @@ export default function GiantsScoreboard() {
         <div style={{display:"flex",alignItems:"center",gap:"0.7vw"}}>
           <div style={{width:"0.7vw",height:"0.7vw",borderRadius:"50%",background:isLive?"#2ecc71":O,boxShadow:isLive?"0 0 10px #2ecc71":`0 0 8px ${O}`,animation:isLive?"livePulse 1.8s ease-in-out infinite":"none"}}/>
           <span style={{fontSize:V.sm,letterSpacing:"0.2em",color:isLive?"#2ecc71":O,fontFamily:V.mono,textTransform:"uppercase"}}>
-            {refreshing&&!data?"Loading…":isLive?"Live · SF Giants":game?.status==="complete"?`Final · ${awayAbbr} ${awayScore} – ${homeAbbr} ${homeScore}`:"No Game In Progress"}
+            {refreshing&&!data?"Loading…":isLive?"Live · SF Giants":"No Game In Progress"}
           </span>
           {error&&error!=="Preview mode"&&<span style={{fontSize:V.xs,color:"rgba(253,90,30,0.5)",fontFamily:V.mono,marginLeft:"1vw"}}>⚠ {error}</span>}
         </div>
