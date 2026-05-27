@@ -40,7 +40,9 @@ async function mlb(path) {
 }
 
 async function fetchAll() {
-  const today = new Date().toISOString().slice(0,10);
+  // Use Pacific time for date (MLB schedules in PT) — UTC can be a day ahead in evenings
+  const ptDate = new Date().toLocaleDateString("en-CA", {timeZone:"America/Los_Angeles"});
+  const today = ptDate; // YYYY-MM-DD in Pacific time
 
   // Standings + streak
   const stData = await mlb("/standings?leagueId=104&standingsTypes=regularSeason&hydrate=streak");
@@ -55,9 +57,21 @@ async function fetchAll() {
     streak: t.streak?.streakCode || null, // e.g. "W3" or "L2"
   }));
 
-  // Today's game
-  const schData = await mlb(`/schedule?sportId=1&teamId=${SF_ID}&date=${today}`);
-  const todayGame = schData.dates?.[0]?.games?.[0] || null;
+  // Today's game — check 2-day window (games can span midnight UTC)
+  const tomorrow = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Los_Angeles"}));
+  tomorrow.setDate(tomorrow.getDate()+1);
+  const tomorrowStr = tomorrow.toLocaleDateString("en-CA",{timeZone:"America/Los_Angeles"});
+  const schData = await mlb(`/schedule?sportId=1&teamId=${SF_ID}&startDate=${today}&endDate=${tomorrowStr}`);
+  // Find first live or today's game
+  let todayGame = null;
+  for (const d of (schData.dates||[])) {
+    for (const g of (d.games||[])) {
+      const gDate = new Date(g.gameDate).toLocaleDateString("en-CA",{timeZone:"America/Los_Angeles"});
+      if (gDate === today) {
+        if (!todayGame || g.status?.abstractGameState === "Live") todayGame = g;
+      }
+    }
+  }
 
   // Next scheduled game
   const future = new Date(); future.setDate(future.getDate() + 14);
