@@ -182,7 +182,7 @@ async function fetchBasketballGame(teamKey) {
     statusDetail = st.type?.shortDetail || st.type?.description;
   } else {
     // Flattened shape from the proxy
-    let state = flat.state || (flat.status==="inprogress"?"in":flat.status==="final"||flat.status==="post"?"post":flat.status);
+    let state = flat.state || (flat.status==="inprogress"?"in":(flat.status==="final"||flat.status==="post"||flat.status==="closed")?"post":flat.status);
     // Some proxies omit status entirely. If we have a period/clock or any score,
     // assume the game is live rather than incorrectly bouncing to standings.
     if (!state && (flat.period || flat.clock || (flat.homeScore!=null && flat.awayScore!=null))) state="in";
@@ -305,7 +305,7 @@ async function checkAllLiveGames() {
         };
       }
       // Already-flat shape (whatever /api/espn may produce)
-      const state = g.state || (g.status === "inprogress" ? "in" : g.status === "final" ? "post" : g.status);
+      const state = g.state || (g.status === "inprogress" ? "in" : (g.status === "final" || g.status === "closed") ? "post" : g.status);
       return {
         home: g.home, away: g.away,
         homeId: String(g.homeId ?? ""), awayId: String(g.awayId ?? ""),
