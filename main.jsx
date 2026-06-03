@@ -233,22 +233,31 @@ async function fetchGiantsGame() {
   if (!todayGame) return {game:null,standings,lastGame,nextGame};
 
   const ht=todayGame.teams.home.team||todayGame.teams.home, at=todayGame.teams.away.team||todayGame.teams.away;
-  const homeAbbr=ht.abbreviation||"SF", awayAbbr=at.abbreviation||"MIL";
+  // Derive abbreviations from the team id when possible so a missing/stale
+  // abbreviation field can't silently fall back to the wrong hardcoded value.
+  const abbrFor=(t,fallback)=>t.abbreviation||(t.id===137?"SF":fallback);
+  const homeAbbr=abbrFor(ht,"HOME"), awayAbbr=abbrFor(at,"AWAY");
+  const giantsIsHome=ht.id===137;
   const status=todayGame.status?.abstractGameState;
   const baseGame={
     hasGame:true,
     status:status==="Live"?"inprogress":status==="Final"?"complete":"scheduled",
     home:homeAbbr,away:awayAbbr,
+    giantsIsHome,
     homeTeamName:ht.name||ht.teamName,awayTeamName:at.name||at.teamName,
     homeTeamId:ht.id,awayTeamId:at.id,
+    // Scores keyed by physical side, never by abbreviation
+    homeScore:0,awayScore:0,
     score:{[homeAbbr]:0,[awayAbbr]:0},
   };
 
   if (status==="Live"||status==="Final") {
     const pk=todayGame.gamePk;
     const [ls,bs]=await Promise.all([mlb(`/game/${pk}/linescore`),mlb(`/game/${pk}/boxscore`)]);
-    baseGame.score[homeAbbr]=ls.teams?.home?.runs??0;
-    baseGame.score[awayAbbr]=ls.teams?.away?.runs??0;
+    baseGame.homeScore=ls.teams?.home?.runs??0;
+    baseGame.awayScore=ls.teams?.away?.runs??0;
+    baseGame.score[homeAbbr]=baseGame.homeScore;
+    baseGame.score[awayAbbr]=baseGame.awayScore;
     const scoring_by_period={};
     (ls.innings||[]).forEach(inn=>{
       scoring_by_period[inn.num]={
@@ -884,17 +893,17 @@ function GiantsScoreboard({onHome}) {
 
   const game=gdata?.game;
   const isLive=game?.status==="inprogress";
-  const homeAbbr=game?.home||"SF", awayAbbr=game?.away||"MIL";
-  const homeScore=game?.score?.[homeAbbr]??0;
-  const awayScore=game?.score?.[awayAbbr]??0;
-  // Giants could be home or away — find which abbr is SF
-  const sfAbbr   = homeAbbr==="SF" ? homeAbbr : awayAbbr;
-  const oppAbbr  = homeAbbr==="SF" ? awayAbbr : homeAbbr;
-  const sfTeamName  = homeAbbr==="SF" ? game?.homeTeamName : game?.awayTeamName;
-  const oppTeamName = homeAbbr==="SF" ? game?.awayTeamName : game?.homeTeamName;
-  // Which physical side (away/home) is the Giants — drives colors & glow, not layout order
-  const giantsIsHome = homeAbbr==="SF";
-  const giantsIsAway = awayAbbr==="SF";
+  const homeAbbr=game?.home||"HOME", awayAbbr=game?.away||"AWAY";
+  // Use side-based scores from the data layer (keyed by home/away, not abbreviation)
+  const homeScore=game?.homeScore??game?.score?.[homeAbbr]??0;
+  const awayScore=game?.awayScore??game?.score?.[awayAbbr]??0;
+  // The data layer already identified the Giants by team id 137.
+  const giantsIsHome = !!game?.giantsIsHome;
+  const giantsIsAway = !giantsIsHome;
+  const sfAbbr   = giantsIsHome ? homeAbbr : awayAbbr;
+  const oppAbbr  = giantsIsHome ? awayAbbr : homeAbbr;
+  const sfTeamName  = giantsIsHome ? game?.homeTeamName : game?.awayTeamName;
+  const oppTeamName = giantsIsHome ? game?.awayTeamName : game?.homeTeamName;
   const giantsWinning = giantsIsHome ? homeScore>awayScore : awayScore>homeScore;
 
   if(!gdata) return <div style={{height:"100vh",background:"#27251F",display:"flex",alignItems:"center",justifyContent:"center",color:O,fontSize:"1.2vw",fontFamily:"'Courier New',monospace",letterSpacing:"0.2em"}}>LOADING…</div>;
