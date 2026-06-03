@@ -236,7 +236,7 @@ function HomeBtn({onClick}) {
 }
 
 // ── Home Screen ───────────────────────────────────────────────────────────────
-function HomeScreen({liveGames, onSelectGame, onStandings}) {
+function HomeScreen({liveGames, checking, onSelectGame, onStandings}) {
   const hasLive = liveGames.length > 0;
   return (
     <div style={{minHeight:"100vh",background:"#111",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"3vw",padding:"4vw",fontFamily:"Georgia,serif"}}>
@@ -284,7 +284,9 @@ function HomeScreen({liveGames, onSelectGame, onStandings}) {
         </div>
       ) : (
         <div style={{textAlign:"center",padding:"2vw 3vw",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6}}>
-          <div style={{fontSize:"1.2vw",color:"rgba(255,255,255,0.4)",fontFamily:"'Courier New',monospace",letterSpacing:"0.1em"}}>NO GAMES LIVE RIGHT NOW</div>
+          <div style={{fontSize:"1.2vw",color:"rgba(255,255,255,0.4)",fontFamily:"'Courier New',monospace",letterSpacing:"0.1em"}}>
+            {checking?"CHECKING FOR LIVE GAMES…":"NO GAMES LIVE RIGHT NOW"}
+          </div>
         </div>
       )}
 
@@ -843,18 +845,62 @@ function GiantsScoreboard({onHome}) {
 
 // ── App root ──────────────────────────────────────────────────────────────────
 function App() {
-  const [screen, setScreen] = useState("home"); // "home" | "standings" | teamKey
+  const [screen, setScreen] = useState("home");
+  const [liveGames, setLiveGames] = useState([]);
+  const [checking, setChecking] = useState(true);
 
-  // For preview — seed a live Giants game button
-  const liveGames = isDeployed() ? [] : [{
-    teamKey:"giants", opponent:"vs Arizona Diamondbacks",
-    homeScore:1, awayScore:0, situation:"▼ 7th · 1 Out",
-  }];
+  const checkLiveGames = useCallback(async () => {
+    if (!isDeployed()) {
+      // Preview seed
+      setLiveGames([{teamKey:"giants",opponent:"at Milwaukee Brewers",homeScore:3,awayScore:1,situation:"▼ 5th · Live"}]);
+      setChecking(false);
+      return;
+    }
+    try {
+      const ptDate = new Date().toLocaleDateString("en-CA",{timeZone:"America/Los_Angeles"});
+      const tomorrow = new Date(new Date().toLocaleString("en-US",{timeZone:"America/Los_Angeles"}));
+      tomorrow.setDate(tomorrow.getDate()+1);
+      const tStr = tomorrow.toLocaleDateString("en-CA",{timeZone:"America/Los_Angeles"});
+      const data = await mlb(`/schedule?sportId=1&teamId=137&startDate=${ptDate}&endDate=${tStr}`);
+      const live = [];
+      for (const d of (data.dates||[])) {
+        for (const g of (d.games||[])) {
+          const gDate = new Date(g.gameDate).toLocaleDateString("en-CA",{timeZone:"America/Los_Angeles"});
+          if (gDate===ptDate && g.status?.abstractGameState==="Live") {
+            const ht = g.teams.home.team||g.teams.home;
+            const at = g.teams.away.team||g.teams.away;
+            const isHome = ht.id===137;
+            const opp = isHome?(at.name||at.teamName):(ht.name||ht.teamName);
+            const sfScore = isHome?(g.teams.home.score??0):(g.teams.away.score??0);
+            const oppScore = isHome?(g.teams.away.score??0):(g.teams.home.score??0);
+            const ls = g.linescore||{};
+            const inning = ls.currentInning||g.linescore?.currentInning||"";
+            const half = ls.isTopInning?"▲":"▼";
+            live.push({
+              teamKey:"giants",
+              opponent:`${isHome?"vs":"at"} ${opp}`,
+              homeScore: isHome?sfScore:oppScore,
+              awayScore: isHome?oppScore:sfScore,
+              situation:`${half} ${inning}${inning?"th":""}`.trim()||"Live",
+            });
+          }
+        }
+      }
+      setLiveGames(live);
+    } catch(e) { setLiveGames([]); }
+    finally { setChecking(false); }
+  }, []);
+
+  useEffect(()=>{
+    checkLiveGames();
+    const t = setInterval(checkLiveGames, 60000);
+    return ()=>clearInterval(t);
+  },[checkLiveGames]);
 
   return (
     <div style={{width:"100vw",height:"100vh",overflow:"hidden"}}>
       <style>{`*{box-sizing:border-box;margin:0;padding:0}body{background:#111}`}</style>
-      {screen==="home"&&<HomeScreen liveGames={liveGames} onSelectGame={key=>setScreen(key)} onStandings={()=>setScreen("standings")}/>}
+      {screen==="home"&&<HomeScreen liveGames={liveGames} checking={checking} onSelectGame={key=>setScreen(key)} onStandings={()=>setScreen("standings")}/>}
       {screen==="standings"&&<StandingsCarousel onHome={()=>setScreen("home")}/>}
       {screen==="giants"&&<GiantsScoreboard onHome={()=>setScreen("home")}/>}
     </div>
