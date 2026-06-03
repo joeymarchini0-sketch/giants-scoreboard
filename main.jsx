@@ -132,34 +132,68 @@ async function fetchBasketballGame(teamKey) {
   const myId = String(cfg.espnId||"");
   const abbrevs = cfg.abbrevs||[];
 
-  // 1) Scoreboard -> find today's game involving this team + its event id
+  // 1) Scoreboard -> find today's game involving this team + its event id.
+  //    The /api/espn proxy may return either ESPN's raw events shape OR a
+  //    pre-flattened shape (same one the home-screen live tile uses), so we
+  //    handle both here.
   const board = await espn(sport);
   const events = Array.isArray(board) ? board : (board.events || board.games || []);
-  const isMine = (t) => (t?.id && String(t.id)===myId) || abbrevs.includes(t?.abbreviation);
+  const matchId = (id) => id && myId && String(id)===myId;
+  const matchAbbr = (ab) => ab && abbrevs.includes(ab);
 
-  let ev=null, comp=null, home=null, away=null;
+  // Detect which shape we're dealing with and find the team's game.
+  let raw=null;          // raw ESPN event (has competitions/competitors)
+  let flat=null;         // flattened game object
   for (const e of events) {
-    const c = e.competitions ? e.competitions[0] : e;
-    const cs = c.competitors || [];
-    const h = cs.find(x=>x.homeAway==="home") || cs[0];
-    const a = cs.find(x=>x.homeAway==="away") || cs[1];
-    if (isMine(h?.team) || isMine(a?.team)) { ev=e; comp=c; home=h; away=a; break; }
+    if (e.competitions || e.competitors) {
+      const c = e.competitions ? e.competitions[0] : e;
+      const cs = c.competitors || [];
+      const h = cs.find(x=>x.homeAway==="home") || cs[0] || {};
+      const a = cs.find(x=>x.homeAway==="away") || cs[1] || {};
+      if (matchId(h.team?.id)||matchId(a.team?.id)||matchAbbr(h.team?.abbreviation)||matchAbbr(a.team?.abbreviation)) {
+        raw={ev:e,comp:c,home:h,away:a}; break;
+      }
+    } else {
+      // flattened
+      if (matchId(e.homeId)||matchId(e.awayId)||matchAbbr(e.home)||matchAbbr(e.away)) {
+        flat=e; break;
+      }
+    }
   }
-  if (!ev) return { game:null };
+  if (!raw && !flat) return { game:null };
 
-  const st = comp.status || ev.status || {};
-  const state = st.type?.state; // "pre"|"in"|"post"
-  const status = state==="in"?"inprogress":state==="post"?"complete":"scheduled";
-  const myIsHome = isMine(home?.team);
+  let status, myIsHome, homeT, awayT, eventId, period, clock, statusDetail;
 
-  const teamBlock = (c) => ({
-    id:String(c?.team?.id??""), abbr:c?.team?.abbreviation||"",
-    name:c?.team?.displayName||c?.team?.name||"", score:Number(c?.score??0),
-    logo:c?.team?.logo, color:c?.team?.color,
-    // linescores: array of period objects with {value}
-    periods:(c?.linescores||[]).map(ls=>Number(ls?.value??ls?.displayValue??0)),
-  });
-  const homeT = teamBlock(home), awayT = teamBlock(away);
+  if (raw) {
+    const {ev,comp,home,away}=raw;
+    const st = comp.status || ev.status || {};
+    const state = st.type?.state;
+    status = state==="in"?"inprogress":state==="post"?"complete":"scheduled";
+    myIsHome = matchId(home.team?.id)||matchAbbr(home.team?.abbreviation);
+    const tb=(c)=>({
+      id:String(c?.team?.id??""), abbr:c?.team?.abbreviation||"",
+      name:c?.team?.displayName||c?.team?.name||"", score:Number(c?.score??0),
+      logo:c?.team?.logo,
+      periods:(c?.linescores||[]).map(ls=>Number(ls?.value??ls?.displayValue??0)),
+    });
+    homeT=tb(home); awayT=tb(away);
+    eventId = ev.id || comp.id;
+    period = st.period; clock = st.displayClock;
+    statusDetail = st.type?.shortDetail || st.type?.description;
+  } else {
+    // Flattened shape from the proxy
+    let state = flat.state || (flat.status==="inprogress"?"in":flat.status==="final"||flat.status==="post"?"post":flat.status);
+    // Some proxies omit status entirely. If we have a period/clock or any score,
+    // assume the game is live rather than incorrectly bouncing to standings.
+    if (!state && (flat.period || flat.clock || (flat.homeScore!=null && flat.awayScore!=null))) state="in";
+    status = state==="in"?"inprogress":state==="post"?"complete":"scheduled";
+    myIsHome = matchId(flat.homeId)||matchAbbr(flat.home);
+    homeT={id:String(flat.homeId??""),abbr:flat.home||"",name:flat.homeName||flat.home||"",score:Number(flat.homeScore??0),logo:flat.homeLogo,periods:flat.homePeriods||[]};
+    awayT={id:String(flat.awayId??""),abbr:flat.away||"",name:flat.awayName||flat.away||"",score:Number(flat.awayScore??0),logo:flat.awayLogo,periods:flat.awayPeriods||[]};
+    eventId = flat.id || flat.eventId || flat.gameId;
+    period = flat.period; clock = flat.clock || flat.displayClock;
+    statusDetail = flat.statusDetail || flat.detail;
+  }
 
   const baseGame = {
     hasGame:true, status, sport, league:cfg.league,
@@ -170,20 +204,19 @@ async function fetchBasketballGame(teamKey) {
     homeLogo:homeT.logo, awayLogo:awayT.logo,
     homeScore:homeT.score, awayScore:awayT.score,
     homePeriods:homeT.periods, awayPeriods:awayT.periods,
-    period: st.period, clock: st.displayClock,
-    statusDetail: st.type?.shortDetail || st.type?.description,
+    period, clock, statusDetail,
     players:{home:[],away:[]},
   };
 
-  // 2) Summary -> per-player box scores (only when live/complete)
-  if (status!=="scheduled") {
+  // 2) Summary -> per-player box scores (only when live/complete and we have an id)
+  if (status!=="scheduled" && eventId) {
     try {
-      const eventId = ev.id || comp.id;
       const sum = await espnSummary(sport, eventId);
       const playersRoot = sum?.boxscore?.players || [];
       // Each entry: {team:{id,abbreviation}, statistics:[{labels:[],athletes:[{athlete:{displayName},stats:[]}]}]}
       for (const pteam of playersRoot) {
-        const side = String(pteam?.team?.id)===homeT.id ? "home" : String(pteam?.team?.id)===awayT.id ? "away" : null;
+        const tid=String(pteam?.team?.id), tab=pteam?.team?.abbreviation;
+        const side = (tid===homeT.id||tab===homeT.abbr) ? "home" : (tid===awayT.id||tab===awayT.abbr) ? "away" : null;
         if (!side) continue;
         const block = (pteam.statistics||[])[0] || {};
         const labels = block.labels || block.names || [];
