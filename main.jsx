@@ -726,6 +726,11 @@ function GiantsScoreboard({onHome}) {
   const homeAbbr=game?.home||"SF", awayAbbr=game?.away||"MIL";
   const homeScore=game?.score?.[homeAbbr]??0;
   const awayScore=game?.score?.[awayAbbr]??0;
+  // Giants could be home or away — find which abbr is SF
+  const sfAbbr   = homeAbbr==="SF" ? homeAbbr : awayAbbr;
+  const oppAbbr  = homeAbbr==="SF" ? awayAbbr : homeAbbr;
+  const sfTeamName  = homeAbbr==="SF" ? game?.homeTeamName : game?.awayTeamName;
+  const oppTeamName = homeAbbr==="SF" ? game?.awayTeamName : game?.homeTeamName;
 
   if(!gdata) return <div style={{height:"100vh",background:"#27251F",display:"flex",alignItems:"center",justifyContent:"center",color:O,fontSize:"1.2vw",fontFamily:"'Courier New',monospace",letterSpacing:"0.2em"}}>LOADING…</div>;
 
@@ -821,13 +826,6 @@ function GiantsScoreboard({onHome}) {
         </div>
         <div style={{height:1,background:"rgba(255,255,255,0.07)",marginBottom:"1.4vw"}}/>
         {/* Batting + Pitching */}
-        {(() => {
-          // Giants might be home OR away — find the right abbr
-          const sfAbbr = Object.keys(game.batters||{}).find(k=>["SF"].includes(k)) || homeAbbr;
-          const oppAbbr = sfAbbr === homeAbbr ? awayAbbr : homeAbbr;
-          const sfTeamName = sfAbbr === homeAbbr ? game.homeTeamName : game.awayTeamName;
-          const oppTeamName = sfAbbr === homeAbbr ? game.awayTeamName : game.homeTeamName;
-          return (
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 1.4vw"}}>
           <div>
             <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:O,opacity:0.7,textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.5vw"}}>Giants Batting</div>
@@ -869,8 +867,6 @@ function GiantsScoreboard({onHome}) {
             ))}
           </div>
         </div>
-          );
-        })()}
       </div>
       <style>{`@keyframes livePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}`}</style>
     </div>
