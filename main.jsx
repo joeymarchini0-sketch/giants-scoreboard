@@ -15,7 +15,7 @@ const TEAMS = {
     league:"NBA", division:"Pacific Division",
     primary:"#1D428A", secondary:"#FFC72C",
     logo:"https://cdn.nba.com/logos/nba/1610612744/global/L/logo.svg",
-    inSeason:false, abbrevs:["GSW","GS"],
+    inSeason:false, abbrevs:["GSW","GS"], espnSport:"nba", espnId:"9",
     lastSeasonLabel:"2025-26 Final Standings",
     bayTeam:"Golden State Warriors",
     lastStandings:[
@@ -31,7 +31,7 @@ const TEAMS = {
     league:"WNBA", division:"Western Conference",
     primary:"#744399", secondary:"#FFC72C",
     logo:"https://a.espncdn.com/combiner/i?img=/i/teamlogos/wnba/500/gsv.png",
-    inSeason:true, abbrevs:["GS","GSV"], espnId:"129689",
+    inSeason:true, abbrevs:["GS","GSV"], espnSport:"wnba", espnId:"129689",
   },
   niners: {
     name:"49ers", fullName:"San Francisco 49ers",
@@ -109,6 +109,109 @@ async function espn(sport) {
   if (!res.ok) throw new Error(`ESPN ${res.status}`);
   return res.json();
 }
+
+// Game-detail (box score) fetch. Expects the /api/espn proxy to forward an
+// `event` param to ESPN's summary endpoint and return its JSON.
+async function espnSummary(sport, eventId) {
+  const res = await fetch(`/api/espn?sport=${sport}&event=${encodeURIComponent(eventId)}`);
+  if (!res.ok) throw new Error(`ESPN summary ${res.status}`);
+  return res.json();
+}
+
+// Pull a number out of ESPN's stat arrays by label (e.g. "PTS","REB","AST")
+function statByLabel(labels, values, want) {
+  const i = (labels||[]).findIndex(l => (l||"").toUpperCase() === want);
+  return i>=0 ? values?.[i] : undefined;
+}
+
+// Build a normalized basketball game for the Valkyries/Warriors dashboard.
+// Returns {game, standings:[]} where game is null when no game today.
+async function fetchBasketballGame(teamKey) {
+  const cfg = TEAMS[teamKey];
+  const sport = cfg.espnSport;       // "wnba" | "nba"
+  const myId = String(cfg.espnId||"");
+  const abbrevs = cfg.abbrevs||[];
+
+  // 1) Scoreboard -> find today's game involving this team + its event id
+  const board = await espn(sport);
+  const events = Array.isArray(board) ? board : (board.events || board.games || []);
+  const isMine = (t) => (t?.id && String(t.id)===myId) || abbrevs.includes(t?.abbreviation);
+
+  let ev=null, comp=null, home=null, away=null;
+  for (const e of events) {
+    const c = e.competitions ? e.competitions[0] : e;
+    const cs = c.competitors || [];
+    const h = cs.find(x=>x.homeAway==="home") || cs[0];
+    const a = cs.find(x=>x.homeAway==="away") || cs[1];
+    if (isMine(h?.team) || isMine(a?.team)) { ev=e; comp=c; home=h; away=a; break; }
+  }
+  if (!ev) return { game:null };
+
+  const st = comp.status || ev.status || {};
+  const state = st.type?.state; // "pre"|"in"|"post"
+  const status = state==="in"?"inprogress":state==="post"?"complete":"scheduled";
+  const myIsHome = isMine(home?.team);
+
+  const teamBlock = (c) => ({
+    id:String(c?.team?.id??""), abbr:c?.team?.abbreviation||"",
+    name:c?.team?.displayName||c?.team?.name||"", score:Number(c?.score??0),
+    logo:c?.team?.logo, color:c?.team?.color,
+    // linescores: array of period objects with {value}
+    periods:(c?.linescores||[]).map(ls=>Number(ls?.value??ls?.displayValue??0)),
+  });
+  const homeT = teamBlock(home), awayT = teamBlock(away);
+
+  const baseGame = {
+    hasGame:true, status, sport, league:cfg.league,
+    myIsHome,
+    home:homeT.abbr, away:awayT.abbr,
+    homeName:homeT.name, awayName:awayT.name,
+    homeId:homeT.id, awayId:awayT.id,
+    homeLogo:homeT.logo, awayLogo:awayT.logo,
+    homeScore:homeT.score, awayScore:awayT.score,
+    homePeriods:homeT.periods, awayPeriods:awayT.periods,
+    period: st.period, clock: st.displayClock,
+    statusDetail: st.type?.shortDetail || st.type?.description,
+    players:{home:[],away:[]},
+  };
+
+  // 2) Summary -> per-player box scores (only when live/complete)
+  if (status!=="scheduled") {
+    try {
+      const eventId = ev.id || comp.id;
+      const sum = await espnSummary(sport, eventId);
+      const playersRoot = sum?.boxscore?.players || [];
+      // Each entry: {team:{id,abbreviation}, statistics:[{labels:[],athletes:[{athlete:{displayName},stats:[]}]}]}
+      for (const pteam of playersRoot) {
+        const side = String(pteam?.team?.id)===homeT.id ? "home" : String(pteam?.team?.id)===awayT.id ? "away" : null;
+        if (!side) continue;
+        const block = (pteam.statistics||[])[0] || {};
+        const labels = block.labels || block.names || [];
+        for (const a of (block.athletes||[])) {
+          if (a?.didNotPlay) continue;
+          const vals = a.stats || [];
+          if (!vals.length) continue;
+          blockPush(baseGame.players[side], {
+            name: a.athlete?.displayName || a.athlete?.shortName || "",
+            starter: !!a.starter,
+            min: statByLabel(labels,vals,"MIN") ?? "",
+            pts: num(statByLabel(labels,vals,"PTS")),
+            reb: num(statByLabel(labels,vals,"REB")),
+            ast: num(statByLabel(labels,vals,"AST")),
+            stl: num(statByLabel(labels,vals,"STL")),
+            blk: num(statByLabel(labels,vals,"BLK")),
+            fg:  statByLabel(labels,vals,"FG") ?? "",
+            tp:  statByLabel(labels,vals,"3PT") ?? "",
+          });
+        }
+      }
+    } catch(e) { console.error("basketball summary failed", e); }
+  }
+
+  return { game: baseGame };
+}
+function blockPush(arr,o){ arr.push(o); }
+function num(v){ const n=Number(v); return Number.isFinite(n)?n:0; }
 
 // ── Check all bay area teams for live games ───────────────────────────────────
 async function checkAllLiveGames() {
@@ -883,11 +986,11 @@ function GiantsScoreboardMobile({onHome,game,sfAbbr,oppAbbr,giantsIsHome,giantsI
                 <tbody>
                   {(game.pitchers?.[key]||[]).map((p,i)=>(
                     <tr key={i} style={{borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-                      <td style={{padding:"1.3vw 1vw 1.3vw 0",color:key===sfAbbr?"#fff":"rgba(255,255,255,0.65)",fontSize:"3vw"}}>
+                      <td style={{padding:"1.3vw 1vw 1.3vw 0",color:"#fff",fontSize:"3vw"}}>
                         {p.status==="active"&&<span style={{display:"inline-block",width:"1.6vw",height:"1.6vw",borderRadius:"50%",background:"#2ecc71",marginRight:"1.2vw",verticalAlign:"middle"}}/>}
                         {p.name}
                       </td>
-                      {[p.ip,p.k,p.bb,p.er].map((v,j)=><td key={j} style={{textAlign:"center",padding:"1.3vw 1vw",fontSize:"3vw",color:j===3&&v>0?"#e74c3c":j===2&&v>3?"#e74c3c":"rgba(255,255,255,0.6)"}}>{v??0}</td>)}
+                      {[p.ip,p.k,p.bb,p.er].map((v,j)=><td key={j} style={{textAlign:"center",padding:"1.3vw 1vw",fontSize:"3vw",color:j===3&&v>0?"#e74c3c":"rgba(255,255,255,0.7)"}}>{v??0}</td>)}
                     </tr>
                   ))}
                 </tbody>
@@ -1071,17 +1174,197 @@ function GiantsScoreboard({onHome}) {
                   <tbody>
                     {(game.pitchers?.[key]||[]).map((p,i)=>(
                       <tr key={i} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-                        <td style={{padding:"0.35vw 0.4vw 0.35vw 0",color:key===sfAbbr?"#fff":"rgba(255,255,255,0.6)"}}>
+                        <td style={{padding:"0.35vw 0.4vw 0.35vw 0",color:"#fff"}}>
                           {p.status==="active"&&<span style={{display:"inline-block",width:"0.5vw",height:"0.5vw",borderRadius:"50%",background:"#2ecc71",marginRight:"0.4vw",verticalAlign:"middle",boxShadow:"0 0 4px #2ecc71"}}/>}
                           {p.name}
                         </td>
-                        {[p.ip,p.k,p.bb,p.er].map((v,j)=><td key={j} style={{textAlign:"center",padding:"0.35vw 0.3vw",color:j===3&&v>0?"#e74c3c":j===2&&v>3?"#e74c3c":"rgba(255,255,255,0.55)"}}>{v??0}</td>)}
+                        {[p.ip,p.k,p.bb,p.er].map((v,j)=><td key={j} style={{textAlign:"center",padding:"0.35vw 0.3vw",color:j===3&&v>0?"#e74c3c":"rgba(255,255,255,0.7)"}}>{v??0}</td>)}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+      <style>{`@keyframes livePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}`}</style>
+    </div>
+  );
+}
+
+// ── Basketball live dashboard (Valkyries / Warriors) ──────────────────────────
+function BasketballScoreboard({teamKey,onHome}) {
+  const [gdata,setGdata]=useState(null);
+  const [loaded,setLoaded]=useState(false);
+  const [refreshing,setRefreshing]=useState(true);
+  const [lastUpdate,setLastUpdate]=useState(null);
+  const isPhone=useIsPhone();
+  const team=TEAMS[teamKey];
+  const O=team.primary;
+
+  const refresh=useCallback(async()=>{
+    setRefreshing(true);
+    try { const r=await fetchBasketballGame(teamKey); setGdata(r); setLastUpdate(new Date()); }
+    catch(e){ console.error(e); }
+    finally { setRefreshing(false); setLoaded(true); }
+  },[teamKey]);
+
+  useEffect(()=>{ refresh(); const t=setInterval(refresh,30000); return()=>clearInterval(t); },[refresh]);
+
+  const game=gdata?.game;
+  const isLive=game?.status==="inprogress";
+
+  if(!loaded) return <div style={{height:"100vh",background:"#16121c",display:"flex",alignItems:"center",justifyContent:"center",color:O,fontSize:isPhone?"4vw":"1.2vw",fontFamily:"'Courier New',monospace",letterSpacing:"0.2em"}}>LOADING…</div>;
+
+  // No live/recent game -> fall back to standings (in-season Valks) or off-season slide
+  if(!game||game.status==="scheduled"){
+    if(teamKey==="valkyries") return <ValkyriasStandingsSlide onHome={onHome}/>;
+    return <OffSeasonSlide teamKey={teamKey} onHome={onHome}/>;
+  }
+
+  const myIsHome=game.myIsHome;
+  const myScore=myIsHome?game.homeScore:game.awayScore;
+  const oppScore=myIsHome?game.awayScore:game.homeScore;
+  const myWinning=myScore>oppScore;
+  const mySide=myIsHome?"home":"away";
+  const oppSide=myIsHome?"away":"home";
+  const periodLabel=game.statusDetail || (game.period?`Q${game.period} ${game.clock||""}`.trim():"Live");
+  const nPeriods=Math.max(game.homePeriods?.length||0, game.awayPeriods?.length||0, 4);
+
+  // Shared sub-renderers ------------------------------------------------------
+  const ScoreSide=({side,label,big,mono})=>{
+    const isMine=(side==="home")===myIsHome;
+    const name=side==="home"?game.homeName:game.awayName;
+    const logo=side==="home"?game.homeLogo:game.awayLogo;
+    const id=side==="home"?game.homeId:game.awayId;
+    const score=side==="home"?game.homeScore:game.awayScore;
+    const won=score>(side==="home"?game.awayScore:game.homeScore);
+    return (
+      <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:big?"center":(side==="away"?"flex-start":"flex-end")}}>
+        <div style={{fontSize:mono.label,letterSpacing:"0.15em",color:"rgba(255,255,255,0.62)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.4em"}}>{label}</div>
+        <div style={{display:"flex",alignItems:"center",gap:mono.gap,marginBottom:"0.4em",flexDirection:big?"column":(side==="away"?"row":"row-reverse")}}>
+          <TeamLogo src={logo||(id?`https://a.espncdn.com/i/teamlogos/${game.sport}/500/${(side==="home"?game.home:game.away).toLowerCase()}.png`:"")} size={mono.logo} fallbackText={(side==="home"?game.home:game.away)}/>
+          <div style={{fontSize:mono.name,fontWeight:800,color:isMine?O:"rgba(255,255,255,0.88)",textAlign:big?"center":"inherit"}}>{name}</div>
+        </div>
+        <div style={{fontSize:mono.score,fontWeight:900,lineHeight:1,letterSpacing:"-0.03em",fontVariantNumeric:"tabular-nums",color:isMine?O:"rgba(255,255,255,0.92)",textShadow:(isMine&&won)?`0 0 ${big?"8vw":"4vw"} ${O}88`:"none"}}>{score}</div>
+      </div>
+    );
+  };
+
+  const Linescore=({mono})=>(
+    <div>
+      <div style={{fontSize:mono.kicker,letterSpacing:"0.2em",color:"rgba(255,255,255,0.55)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.6em"}}>By Quarter</div>
+      <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        <table style={{borderCollapse:"collapse",fontFamily:"'Courier New',monospace",minWidth:"100%"}}>
+          <thead><tr>
+            <th style={{textAlign:"left",padding:`0 ${mono.cellX} ${mono.cellY} 0`,color:"rgba(255,255,255,0.55)",fontWeight:400,fontSize:mono.kicker}}>TEAM</th>
+            {Array.from({length:nPeriods}).map((_,i)=><th key={i} style={{textAlign:"center",padding:`0 ${mono.cellX} ${mono.cellY}`,color:"rgba(255,255,255,0.55)",fontWeight:400,fontSize:mono.kicker}}>{i<4?i+1:`OT${i-3}`}</th>)}
+            <th style={{textAlign:"center",padding:`0 ${mono.cellX} ${mono.cellY}`,color:"rgba(255,255,255,0.55)",fontWeight:400,fontSize:mono.kicker,borderLeft:"1px solid rgba(255,255,255,0.12)"}}>T</th>
+          </tr></thead>
+          <tbody>
+            {[{abbr:game.away,per:game.awayPeriods,tot:game.awayScore,mine:!myIsHome},{abbr:game.home,per:game.homePeriods,tot:game.homeScore,mine:myIsHome}].map((row)=>(
+              <tr key={row.abbr} style={{borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+                <td style={{padding:`${mono.cellY} ${mono.cellX} ${mono.cellY} 0`,fontWeight:700,fontSize:mono.rowAbbr,color:row.mine?O:"rgba(255,255,255,0.7)"}}>{row.abbr}</td>
+                {Array.from({length:nPeriods}).map((_,i)=><td key={i} style={{textAlign:"center",padding:`${mono.cellY} ${mono.cellX}`,fontSize:mono.cell,color:(row.per?.[i]??null)!==null?"#fff":"rgba(255,255,255,0.35)"}}>{row.per?.[i]??"·"}</td>)}
+                <td style={{textAlign:"center",padding:`${mono.cellY} ${mono.cellX}`,fontWeight:800,fontSize:mono.rowTot,color:"#fff",borderLeft:"1px solid rgba(255,255,255,0.12)"}}>{row.tot}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const BoxScore=({side,label,accent,mono})=>{
+    const players=game.players?.[side]||[];
+    if(!players.length) return null;
+    return (
+      <div>
+        <div style={{fontSize:mono.kicker,letterSpacing:"0.18em",color:accent?O:"rgba(255,255,255,0.55)",opacity:accent?0.9:1,textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.6em"}}>{label}</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Courier New',monospace"}}>
+          <thead><tr>{["Player","MIN","PTS","REB","AST","FG","3PT"].map(h=><th key={h} style={{textAlign:h==="Player"?"left":"center",padding:`0 ${mono.statX} ${mono.cellY}`,color:"rgba(255,255,255,0.5)",fontWeight:400,fontSize:mono.kicker}}>{h}</th>)}</tr></thead>
+          <tbody>
+            {players.map((p,i)=>(
+              <tr key={i} style={{borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+                <td style={{padding:`${mono.cellY} ${mono.statX} ${mono.cellY} 0`,color:"#fff",fontSize:mono.cell,whiteSpace:"nowrap"}}>
+                  {p.starter&&<span style={{display:"inline-block",width:mono.dot,height:mono.dot,borderRadius:"50%",background:accent?O:"rgba(255,255,255,0.4)",marginRight:"0.5em",verticalAlign:"middle"}}/>}
+                  {p.name}
+                </td>
+                <td style={{textAlign:"center",padding:`${mono.cellY} ${mono.statX}`,fontSize:mono.cell,color:"rgba(255,255,255,0.55)"}}>{p.min||"—"}</td>
+                <td style={{textAlign:"center",padding:`${mono.cellY} ${mono.statX}`,fontSize:mono.cell,fontWeight:p.pts>0?700:400,color:p.pts>0?"#fff":"rgba(255,255,255,0.4)"}}>{p.pts}</td>
+                <td style={{textAlign:"center",padding:`${mono.cellY} ${mono.statX}`,fontSize:mono.cell,color:p.reb>0?"#fff":"rgba(255,255,255,0.4)"}}>{p.reb}</td>
+                <td style={{textAlign:"center",padding:`${mono.cellY} ${mono.statX}`,fontSize:mono.cell,color:p.ast>0?"#fff":"rgba(255,255,255,0.4)"}}>{p.ast}</td>
+                <td style={{textAlign:"center",padding:`${mono.cellY} ${mono.statX}`,fontSize:mono.cell,color:"rgba(255,255,255,0.6)"}}>{p.fg||"—"}</td>
+                <td style={{textAlign:"center",padding:`${mono.cellY} ${mono.statX}`,fontSize:mono.cell,color:"rgba(255,255,255,0.6)"}}>{p.tp||"—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const bg=`radial-gradient(ellipse at 20% 0%, ${O}33 0%, #16121c 55%)`;
+  const liveDot=<div style={{width:isPhone?"2.4vw":"0.7vw",height:isPhone?"2.4vw":"0.7vw",borderRadius:"50%",background:isLive?"#2ecc71":"rgba(255,255,255,0.4)",boxShadow:isLive?"0 0 10px #2ecc71":"none",animation:isLive?"livePulse 1.8s ease-in-out infinite":"none"}}/>;
+
+  // ── PHONE ──────────────────────────────────────────────────────────────────
+  if(isPhone){
+    const m={label:"3vw",gap:"1.5vw",logo:"11vw",name:"3.6vw",score:"16vw",kicker:"2.8vw",cellX:"1.5vw",cellY:"1.5vw",rowAbbr:"3.4vw",cell:"3vw",rowTot:"3.6vw",statX:"1vw",dot:"1.6vw"};
+    return (
+      <div style={{position:"fixed",inset:0,background:bg,fontFamily:"Georgia,serif",color:"#fff",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style={{height:"1vw",background:`linear-gradient(90deg,${O},${team.secondary})`,flexShrink:0}}/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3vw 4vw",borderBottom:"1px solid rgba(255,255,255,0.1)",flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:"2vw"}}>{liveDot}<span style={{fontSize:"3vw",letterSpacing:"0.15em",color:isLive?"#2ecc71":"rgba(255,255,255,0.6)",fontFamily:"'Courier New',monospace",textTransform:"uppercase"}}>{isLive?"Live":"Final"} · {team.name}</span></div>
+          <button onClick={onHome} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.8)",padding:"1.6vw 3.5vw",borderRadius:4,fontSize:"3vw",fontFamily:"'Courier New',monospace",letterSpacing:"0.08em",cursor:"pointer",textTransform:"uppercase"}}>Home</button>
+        </div>
+        <div style={{flex:1,minHeight:0,overflowY:"auto",padding:"5vw 4vw",WebkitOverflowScrolling:"touch"}}>
+          <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"3vw"}}>
+            <ScoreSide side="away" label="Away" big mono={m}/>
+            <div style={{flexShrink:0,padding:"6vw 1vw 0",display:"flex",flexDirection:"column",alignItems:"center",gap:"1vw"}}>
+              <span style={{fontSize:"4vw",color:"rgba(255,255,255,0.35)",fontWeight:900}}>–</span>
+            </div>
+            <ScoreSide side="home" label="Home" big mono={m}/>
+          </div>
+          <div style={{textAlign:"center",fontSize:"3vw",color:isLive?"#2ecc71":"rgba(255,255,255,0.6)",fontFamily:"'Courier New',monospace",marginBottom:"5vw"}}>{periodLabel}</div>
+          <div style={{marginBottom:"5vw"}}><Linescore mono={m}/></div>
+          <div style={{marginBottom:"5vw"}}><BoxScore side={mySide} label={`${team.name} Box Score`} accent mono={m}/></div>
+          <div><BoxScore side={oppSide} label={`${myIsHome?game.awayName:game.homeName} Box Score`} mono={m}/></div>
+        </div>
+        <style>{`@keyframes livePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}`}</style>
+      </div>
+    );
+  }
+
+  // ── DESKTOP ────────────────────────────────────────────────────────────────
+  const m={label:"0.65vw",gap:"0.8vw",logo:"2.5vw",name:"1.35vw",score:"7vw",kicker:"0.65vw",cellX:"0.8vw",cellY:"0.5vw",rowAbbr:"0.95vw",cell:"0.85vw",rowTot:"1.1vw",statX:"0.5vw",dot:"0.5vw"};
+  return (
+    <div style={{position:"fixed",inset:0,background:bg,fontFamily:"Georgia,serif",color:"#fff",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{height:"0.4vw",background:`linear-gradient(90deg,${O},${team.secondary})`,flexShrink:0}}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.7vw 1.4vw",borderBottom:"1px solid rgba(255,255,255,0.07)",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:"0.7vw"}}>{liveDot}<span style={{fontSize:"0.8vw",letterSpacing:"0.2em",color:isLive?"#2ecc71":"rgba(255,255,255,0.6)",fontFamily:"'Courier New',monospace",textTransform:"uppercase"}}>{isLive?"Live":"Final"} · {team.fullName}</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:"1vw"}}>
+          <span style={{fontSize:"0.8vw",color:"rgba(255,255,255,0.5)",fontFamily:"'Courier New',monospace"}}>{refreshing?"Refreshing…":lastUpdate?`Updated ${lastUpdate.toLocaleTimeString()}`:""}</span>
+          <button onClick={refresh} disabled={refreshing} style={{background:"transparent",border:`1px solid ${O}59`,color:O,padding:"0.3vw 1vw",borderRadius:2,fontSize:"0.65vw",fontFamily:"'Courier New',monospace",cursor:"pointer",textTransform:"uppercase"}}>{refreshing?"…":"Refresh"}</button>
+          <HomeBtn onClick={onHome}/>
+        </div>
+      </div>
+      <div style={{flex:1,minHeight:0,overflowY:"auto",padding:"1.4vw"}}>
+        <div style={{display:"flex",alignItems:"center",marginBottom:"1.4vw"}}>
+          <ScoreSide side="away" label="Away" mono={m}/>
+          <div style={{width:"16vw",flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:"0.6vw",padding:"0 1.4vw"}}>
+            <div style={{fontSize:"1.05vw",fontWeight:700,color:isLive?"#2ecc71":"rgba(255,255,255,0.65)",fontFamily:"'Courier New',monospace",textAlign:"center"}}>{periodLabel}</div>
+            <div style={{fontSize:"0.65vw",letterSpacing:"0.15em",color:"rgba(255,255,255,0.45)",fontFamily:"'Courier New',monospace",textTransform:"uppercase"}}>{team.league}</div>
+          </div>
+          <ScoreSide side="home" label="Home" mono={m}/>
+        </div>
+        <div style={{height:1,background:"rgba(255,255,255,0.07)",marginBottom:"1.4vw"}}/>
+        <div style={{marginBottom:"1.4vw"}}><Linescore mono={m}/></div>
+        <div style={{height:1,background:"rgba(255,255,255,0.07)",marginBottom:"1.4vw"}}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 1.4vw"}}>
+          <BoxScore side={mySide} label={`${team.name} Box Score`} accent mono={m}/>
+          <div style={{borderLeft:"1px solid rgba(255,255,255,0.07)",paddingLeft:"1.4vw"}}>
+            <BoxScore side={oppSide} label={`${myIsHome?game.awayName:game.homeName} Box Score`} mono={m}/>
           </div>
         </div>
       </div>
@@ -1123,8 +1406,8 @@ function App() {
       {screen==="home"     &&<HomeScreen liveGames={liveGames} checking={checking} onSelectGame={k=>setScreen(k)} onStandings={()=>setScreen("standings")}/>}
       {screen==="standings"&&<StandingsCarousel onHome={()=>setScreen("home")}/>}
       {screen==="giants"   &&<GiantsScoreboard onHome={()=>setScreen("home")}/>}
-      {screen==="valkyries"&&<ValkyriasStandingsSlide onHome={()=>setScreen("home")}/>}
-      {screen==="warriors" &&<OffSeasonSlide teamKey="warriors"  onHome={()=>setScreen("home")}/>}
+      {screen==="valkyries"&&<BasketballScoreboard teamKey="valkyries" onHome={()=>setScreen("home")}/>}
+      {screen==="warriors" &&<BasketballScoreboard teamKey="warriors"  onHome={()=>setScreen("home")}/>}
       {screen==="niners"   &&<OffSeasonSlide teamKey="niners"    onHome={()=>setScreen("home")}/>}
       {screen==="sharks"   &&<OffSeasonSlide teamKey="sharks"    onHome={()=>setScreen("home")}/>}
     </div>
