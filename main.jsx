@@ -284,9 +284,11 @@ async function checkAllLiveGames() {
   // into one consistent shape: {home,away,homeId,awayId,homeName,awayName,homeScore,awayScore,state,period,clock}
   function normalizeGames(raw) {
     if (!raw) return [];
-    // Already an array of flat game objects?
+    // Guard: proxy may return an error object ({error:"..."}) instead of an array
     const arr = Array.isArray(raw) ? raw : (raw.events || raw.games || []);
+    if (!Array.isArray(arr)) return [];
     return arr.map(g => {
+      try {
       // ESPN raw event shape
       if (g.competitions || g.competitors) {
         const comp = g.competitions ? g.competitions[0] : g;
@@ -313,7 +315,8 @@ async function checkAllLiveGames() {
         homeScore: Number(g.homeScore ?? 0), awayScore: Number(g.awayScore ?? 0),
         state, period: g.period, clock: g.clock,
       };
-    });
+      } catch(_) { return null; }
+    }).filter(Boolean);
   }
 
   for (const {sport, teamKey, abbrevs, espnId} of sportChecks) {
