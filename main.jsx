@@ -72,6 +72,25 @@ const TEAMS = {
 const CAROUSEL_ORDER = ["giants","warriors","valkyries","niners","sharks"];
 const SLIDE_DURATION = 12000;
 
+// Detect a narrow portrait phone viewport so we can render a simplified layout
+function useIsPhone() {
+  const [isPhone, setIsPhone] = useState(
+    typeof window !== "undefined" &&
+    window.innerWidth <= 600 && window.innerHeight > window.innerWidth
+  );
+  useEffect(() => {
+    const check = () => setIsPhone(window.innerWidth <= 600 && window.innerHeight > window.innerWidth);
+    check();
+    window.addEventListener("resize", check);
+    window.addEventListener("orientationchange", check);
+    return () => {
+      window.removeEventListener("resize", check);
+      window.removeEventListener("orientationchange", check);
+    };
+  }, []);
+  return isPhone;
+}
+
 function isDeployed() {
   return typeof window !== "undefined" &&
     !window.location.hostname.includes("claude") &&
@@ -294,51 +313,64 @@ function HomeBtn({onClick,label="← Home"}) {
 // ── Home screen ───────────────────────────────────────────────────────────────
 function HomeScreen({liveGames,checking,onSelectGame,onStandings}) {
   const hasLive=liveGames.length>0;
+  const isPhone=useIsPhone();
+  // Size tokens swap based on viewport
+  const s = isPhone ? {
+    pad:"6vw 5vw", gap:"7vw", title:"7vw", subtitle:"3vw", liveLabel:"3vw",
+    cardWrap:"100%", cardPad:"4vw 5vw", cardGap:"3.5vw", logo:"11vw",
+    teamName:"5vw", opp:"3.2vw", score:"11vw", dash:"6vw", sit:"3vw",
+    emptyPad:"6vw 8vw", emptyText:"3.6vw", btnPad:"4vw 10vw", btnText:"3.6vw",
+  } : {
+    pad:"4vw", gap:"2.5vw", title:"2.2vw", subtitle:"0.85vw", liveLabel:"0.75vw",
+    cardWrap:"65vw", cardPad:"1.4vw 2.5vw", cardGap:"1.5vw", logo:"4vw",
+    teamName:"1.8vw", opp:"0.9vw", score:"4vw", dash:"2.2vw", sit:"0.8vw",
+    emptyPad:"2vw 4vw", emptyText:"1.1vw", btnPad:"1.2vw 5vw", btnText:"1.1vw",
+  };
   return (
-    <div style={{minHeight:"100vh",background:"#111",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"2.5vw",padding:"4vw",fontFamily:"Georgia,serif"}}>
+    <div style={{minHeight:"100vh",background:"#111",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:s.gap,padding:s.pad,fontFamily:"Georgia,serif"}}>
       <div style={{textAlign:"center"}}>
-        <div style={{fontSize:"2.2vw",fontWeight:900,color:"#fff",letterSpacing:"0.05em"}}>BAY AREA SPORTS</div>
-        <div style={{fontSize:"0.85vw",color:"rgba(255,255,255,0.35)",fontFamily:"'Courier New',monospace",letterSpacing:"0.2em",textTransform:"uppercase",marginTop:"0.3vw"}}>Live Scores & Standings</div>
+        <div style={{fontSize:s.title,fontWeight:900,color:"#fff",letterSpacing:"0.05em"}}>BAY AREA SPORTS</div>
+        <div style={{fontSize:s.subtitle,color:"rgba(255,255,255,0.58)",fontFamily:"'Courier New',monospace",letterSpacing:"0.2em",textTransform:"uppercase",marginTop:"0.5em"}}>Live Scores & Standings</div>
       </div>
 
       {hasLive ? (
-        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"1vw",width:"100%",maxWidth:"65vw"}}>
-          <div style={{fontSize:"0.75vw",letterSpacing:"0.2em",color:"rgba(255,255,255,0.35)",fontFamily:"'Courier New',monospace",textTransform:"uppercase",marginBottom:"0.3vw"}}>Live Now</div>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:isPhone?"3vw":"1vw",width:"100%",maxWidth:s.cardWrap}}>
+          <div style={{fontSize:s.liveLabel,letterSpacing:"0.2em",color:"rgba(255,255,255,0.58)",fontFamily:"'Courier New',monospace",textTransform:"uppercase",marginBottom:"0.5em"}}>Live Now</div>
           {liveGames.map((g,i)=>{
             const team=TEAMS[g.teamKey];
             return (
               <button key={i} onClick={()=>onSelectGame(g.teamKey)} style={{
                 width:"100%",background:`linear-gradient(135deg,${team.primary}22,${team.primary}44)`,
                 border:`2px solid ${team.primary}`,borderRadius:6,
-                padding:"1.4vw 2.5vw",cursor:"pointer",
-                display:"flex",alignItems:"center",justifyContent:"space-between",
+                padding:s.cardPad,cursor:"pointer",
+                display:"flex",alignItems:"center",justifyContent:"space-between",gap:"3vw",
                 transition:"all 0.2s",
               }}
                 onMouseOver={e=>e.currentTarget.style.background=`linear-gradient(135deg,${team.primary}44,${team.primary}66)`}
                 onMouseOut={e=>e.currentTarget.style.background=`linear-gradient(135deg,${team.primary}22,${team.primary}44)`}
               >
-                <div style={{display:"flex",alignItems:"center",gap:"1.5vw"}}>
-                  <TeamLogo src={team.logo} size="4vw" fallbackText={team.name.slice(0,2)}/>
-                  <div style={{textAlign:"left"}}>
-                    <div style={{fontSize:"1.8vw",fontWeight:900,color:"#fff"}}>{team.name}</div>
-                    <div style={{fontSize:"0.9vw",color:"rgba(255,255,255,0.5)",fontFamily:"'Courier New',monospace",marginTop:"0.1vw"}}>{g.opponent}</div>
+                <div style={{display:"flex",alignItems:"center",gap:s.cardGap,minWidth:0}}>
+                  <TeamLogo src={team.logo} size={s.logo} fallbackText={team.name.slice(0,2)}/>
+                  <div style={{textAlign:"left",minWidth:0}}>
+                    <div style={{fontSize:s.teamName,fontWeight:900,color:"#fff"}}>{team.name}</div>
+                    <div style={{fontSize:s.opp,color:"rgba(255,255,255,0.62)",fontFamily:"'Courier New',monospace",marginTop:"0.2em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.opponent}</div>
                   </div>
                 </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontSize:"4vw",fontWeight:900,lineHeight:1,fontVariantNumeric:"tabular-nums",display:"flex",alignItems:"center",gap:"0.5vw"}}>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontSize:s.score,fontWeight:900,lineHeight:1,fontVariantNumeric:"tabular-nums",display:"flex",alignItems:"center",gap:"0.2em"}}>
                     <span style={{color:team.primary}}>{g.bayScore}</span>
-                    <span style={{color:"rgba(255,255,255,0.25)",fontSize:"2.2vw"}}>–</span>
+                    <span style={{color:"rgba(255,255,255,0.5)",fontSize:s.dash}}>–</span>
                     <span style={{color:"rgba(255,255,255,0.8)"}}>{g.oppScore}</span>
                   </div>
-                  <div style={{fontSize:"0.8vw",color:team.primary,fontFamily:"'Courier New',monospace",marginTop:"0.2vw"}}>{g.situation}</div>
+                  <div style={{fontSize:s.sit,color:team.primary,fontFamily:"'Courier New',monospace",marginTop:"0.3em",whiteSpace:"nowrap"}}>{g.situation}</div>
                 </div>
               </button>
             );
           })}
         </div>
       ) : (
-        <div style={{textAlign:"center",padding:"2vw 4vw",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6}}>
-          <div style={{fontSize:"1.1vw",color:"rgba(255,255,255,0.4)",fontFamily:"'Courier New',monospace",letterSpacing:"0.1em"}}>
+        <div style={{textAlign:"center",padding:s.emptyPad,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6}}>
+          <div style={{fontSize:s.emptyText,color:"rgba(255,255,255,0.62)",fontFamily:"'Courier New',monospace",letterSpacing:"0.1em"}}>
             {checking?"CHECKING FOR LIVE GAMES…":"NO GAMES LIVE RIGHT NOW"}
           </div>
         </div>
@@ -346,11 +378,11 @@ function HomeScreen({liveGames,checking,onSelectGame,onStandings}) {
 
       <button onClick={onStandings} style={{
         background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.2)",
-        color:"#fff",padding:"1.2vw 5vw",borderRadius:4,
-        fontSize:"1.1vw",fontFamily:"'Courier New',monospace",letterSpacing:"0.2em",
+        color:"#fff",padding:s.btnPad,borderRadius:4,
+        fontSize:s.btnText,fontFamily:"'Courier New',monospace",letterSpacing:"0.2em",
         cursor:"pointer",textTransform:"uppercase",transition:"all 0.2s",
       }}
-        onMouseOver={e=>{e.currentTarget.style.background="rgba(255,255,255,0.12)";e.currentTarget.style.borderColor="rgba(255,255,255,0.4)";}}
+        onMouseOver={e=>{e.currentTarget.style.background="rgba(255,255,255,0.12)";e.currentTarget.style.borderColor="rgba(255,255,255,0.62)";}}
         onMouseOut={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.borderColor="rgba(255,255,255,0.2)";}}
       >
         📊 Standings
@@ -407,13 +439,13 @@ function GiantsStandingsSlide({onHome}) {
         <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:"1vw",flexShrink:0}}>
           <div style={{background:"rgba(253,90,30,0.08)",border:"1px solid rgba(253,90,30,0.25)",borderRadius:4,padding:"1vw 1.5vw",display:"flex",alignItems:"center",gap:"1.2vw"}}>
             <div style={{flexShrink:0}}>
-              <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:"rgba(255,255,255,0.4)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.2vw"}}>Next Game</div>
-              <div style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.3)",fontFamily:"'Courier New',monospace"}}>{nextGame?.location}</div>
+              <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:"rgba(255,255,255,0.62)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.2vw"}}>Next Game</div>
+              <div style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.55)",fontFamily:"'Courier New',monospace"}}>{nextGame?.location}</div>
             </div>
             <div style={{flex:1}}>
               <div style={{fontSize:"1.6vw",fontWeight:900,color:"#fff",lineHeight:1.1}}>
                 <span style={{color:O}}>SF Giants</span>
-                <span style={{color:"rgba(255,255,255,0.3)",margin:"0 0.6vw",fontWeight:400,fontSize:"1.1vw"}}>vs</span>
+                <span style={{color:"rgba(255,255,255,0.55)",margin:"0 0.6vw",fontWeight:400,fontSize:"1.1vw"}}>vs</span>
                 <span>{nextGame?.opponent}</span>
               </div>
             </div>
@@ -424,38 +456,38 @@ function GiantsStandingsSlide({onHome}) {
           </div>
           {lastGame&&(
             <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)",borderRadius:4,padding:"1vw 1.4vw",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"0.3vw",minWidth:"10vw"}}>
-              <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:"rgba(255,255,255,0.35)",textTransform:"uppercase",fontFamily:"'Courier New',monospace"}}>Last Game</div>
+              <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:"rgba(255,255,255,0.58)",textTransform:"uppercase",fontFamily:"'Courier New',monospace"}}>Last Game</div>
               <div style={{display:"flex",alignItems:"center",gap:"0.6vw"}}>
                 <TeamLogo src={`https://www.mlbstatic.com/team-logos/${lastGame.oppId}.svg`} size="1.8vw" fallbackText="OPP"/>
                 <div style={{fontSize:"1.8vw",fontWeight:900,fontFamily:"'Courier New',monospace",color:lastGame.won?"#2ecc71":"#e74c3c"}}>{lastGame.won?"W":"L"}</div>
                 <div style={{fontSize:"1.3vw",fontWeight:700,color:"#fff",fontFamily:"'Courier New',monospace"}}>{lastGame.sfScore}–{lastGame.oppScore}</div>
               </div>
-              <div style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.3)",fontFamily:"'Courier New',monospace"}}>vs {lastGame.oppName}</div>
+              <div style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.55)",fontFamily:"'Courier New',monospace"}}>vs {lastGame.oppName}</div>
             </div>
           )}
         </div>
         {/* Standings */}
         <div style={{display:"flex",alignItems:"baseline",gap:"0.6vw",flexShrink:0}}>
           <div style={{fontSize:"1.8vw",fontWeight:900,color:"#fff"}}>NL West</div>
-          <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:"rgba(255,255,255,0.35)",textTransform:"uppercase",fontFamily:"'Courier New',monospace"}}>Standings</div>
+          <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:"rgba(255,255,255,0.58)",textTransform:"uppercase",fontFamily:"'Courier New',monospace"}}>Standings</div>
         </div>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead>
             <tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
               {["#","","Team","W","L","PCT","GB","STREAK"].map((h,i)=>(
-                <th key={i} style={{textAlign:i<3?"left":"center",padding:"0.3vw 0.6vw 0.6vw",color:"rgba(255,255,255,0.3)",fontWeight:400,fontSize:"0.65vw",letterSpacing:"0.15em",fontFamily:"'Courier New',monospace",textTransform:"uppercase"}}>{h}</th>
+                <th key={i} style={{textAlign:i<3?"left":"center",padding:"0.3vw 0.6vw 0.6vw",color:"rgba(255,255,255,0.55)",fontWeight:400,fontSize:"0.65vw",letterSpacing:"0.15em",fontFamily:"'Courier New',monospace",textTransform:"uppercase"}}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {standings.map((t,i)=>{
               const isG=t.abbr==="SF";
-              const meta=MLB_COLORS[t.abbr]||{color:"rgba(255,255,255,0.4)",bg:"transparent"};
+              const meta=MLB_COLORS[t.abbr]||{color:"rgba(255,255,255,0.62)",bg:"transparent"};
               const pct=(t.w/(t.w+t.l)).toFixed(3).replace(/^0/,"");
               const gb=i===0?"—":(((leader.w-t.w)+(t.l-leader.l))/2).toFixed(1);
               return (
                 <tr key={t.abbr} style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:isG?"rgba(253,90,30,0.1)":meta.bg,outline:isG?"1px solid rgba(253,90,30,0.3)":"none",outlineOffset:"-1px"}}>
-                  <td style={{padding:"0.9vw 0.6vw",color:isG?O:"rgba(255,255,255,0.3)",fontSize:"0.9vw",fontFamily:"'Courier New',monospace",fontWeight:isG?700:400}}>{t.rank}</td>
+                  <td style={{padding:"0.9vw 0.6vw",color:isG?O:"rgba(255,255,255,0.55)",fontSize:"0.9vw",fontFamily:"'Courier New',monospace",fontWeight:isG?700:400}}>{t.rank}</td>
                   <td style={{padding:"0.9vw 0.3vw",width:"3vw"}}><TeamLogo src={`https://www.mlbstatic.com/team-logos/${t.id}.svg`} size="2.5vw" fallbackText={t.abbr}/></td>
                   <td style={{padding:"0.9vw 0.6vw"}}>
                     <div style={{fontSize:"1.1vw",fontWeight:isG?900:500,color:isG?"#fff":"rgba(255,255,255,0.8)"}}>
@@ -464,9 +496,9 @@ function GiantsStandingsSlide({onHome}) {
                     </div>
                   </td>
                   <td style={{textAlign:"center",padding:"0.9vw 0.6vw",fontSize:"1.3vw",fontWeight:800,color:isG?"#fff":"rgba(255,255,255,0.75)"}}>{t.w}</td>
-                  <td style={{textAlign:"center",padding:"0.9vw 0.6vw",fontSize:"1.3vw",color:"rgba(255,255,255,0.45)"}}>{t.l}</td>
+                  <td style={{textAlign:"center",padding:"0.9vw 0.6vw",fontSize:"1.3vw",color:"rgba(255,255,255,0.65)"}}>{t.l}</td>
                   <td style={{textAlign:"center",padding:"0.9vw 0.6vw",fontFamily:"'Courier New',monospace",fontSize:"0.85vw",color:isG?O:"rgba(255,255,255,0.55)",fontWeight:isG?700:400}}>{pct}</td>
-                  <td style={{textAlign:"center",padding:"0.9vw 0.6vw",fontFamily:"'Courier New',monospace",fontSize:"0.85vw",color:"rgba(255,255,255,0.4)"}}>{gb}</td>
+                  <td style={{textAlign:"center",padding:"0.9vw 0.6vw",fontFamily:"'Courier New',monospace",fontSize:"0.85vw",color:"rgba(255,255,255,0.62)"}}>{gb}</td>
                   <td style={{textAlign:"center",padding:"0.9vw 0.6vw"}}><StreakBadge streak={t.streak}/></td>
                 </tr>
               );
@@ -492,7 +524,7 @@ function OffSeasonSlide({teamKey,onHome}) {
           <TeamLogo src={team.logo} size="2.5vw" fallbackText={team.name.slice(0,2)}/>
           <div>
             <div style={{fontSize:"1.1vw",fontWeight:900,color:team.primary}}>{team.fullName}</div>
-            <div style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.4)",fontFamily:"'Courier New',monospace",letterSpacing:"0.15em",textTransform:"uppercase"}}>OFF SEASON</div>
+            <div style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.62)",fontFamily:"'Courier New',monospace",letterSpacing:"0.15em",textTransform:"uppercase"}}>OFF SEASON</div>
           </div>
         </div>
         <HomeBtn onClick={onHome}/>
@@ -506,7 +538,7 @@ function OffSeasonSlide({teamKey,onHome}) {
           <thead>
             <tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
               {["#","Team","W","L","PCT","GB"].map((h,i)=>(
-                <th key={h} style={{textAlign:i<2?"left":"center",padding:"0.4vw 0.8vw 0.7vw",color:"rgba(255,255,255,0.3)",fontWeight:400,fontSize:"0.7vw",letterSpacing:"0.15em",fontFamily:"'Courier New',monospace",textTransform:"uppercase"}}>{h}</th>
+                <th key={h} style={{textAlign:i<2?"left":"center",padding:"0.4vw 0.8vw 0.7vw",color:"rgba(255,255,255,0.55)",fontWeight:400,fontSize:"0.7vw",letterSpacing:"0.15em",fontFamily:"'Courier New',monospace",textTransform:"uppercase"}}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -517,15 +549,15 @@ function OffSeasonSlide({teamKey,onHome}) {
               const gb=i===0?"—":(((leader.w-t.w)+(t.l-leader.l))/2).toFixed(1);
               return (
                 <tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:isBay?`${team.primary}18`:"transparent",outline:isBay?`1px solid ${team.primary}44`:"none",outlineOffset:"-1px"}}>
-                  <td style={{padding:"1.2vw 0.8vw",color:isBay?team.primary:"rgba(255,255,255,0.3)",fontSize:"1vw",fontFamily:"'Courier New',monospace",fontWeight:isBay?700:400}}>{t.rank}</td>
+                  <td style={{padding:"1.2vw 0.8vw",color:isBay?team.primary:"rgba(255,255,255,0.55)",fontSize:"1vw",fontFamily:"'Courier New',monospace",fontWeight:isBay?700:400}}>{t.rank}</td>
                   <td style={{padding:"1.2vw 0.8vw",fontSize:"1.3vw",fontWeight:isBay?900:500,color:isBay?"#fff":"rgba(255,255,255,0.75)"}}>
                     {t.name}
                     {isBay&&<span style={{marginLeft:"0.6vw",fontSize:"0.65vw",color:team.primary,fontFamily:"'Courier New',monospace"}}>YOUR TEAM</span>}
                   </td>
                   <td style={{textAlign:"center",padding:"1.2vw 0.8vw",fontSize:"1.5vw",fontWeight:700,color:isBay?"#fff":"rgba(255,255,255,0.7)"}}>{t.w}</td>
-                  <td style={{textAlign:"center",padding:"1.2vw 0.8vw",fontSize:"1.5vw",color:"rgba(255,255,255,0.45)"}}>{t.l}</td>
+                  <td style={{textAlign:"center",padding:"1.2vw 0.8vw",fontSize:"1.5vw",color:"rgba(255,255,255,0.65)"}}>{t.l}</td>
                   <td style={{textAlign:"center",padding:"1.2vw 0.8vw",fontFamily:"'Courier New',monospace",fontSize:"0.95vw",color:isBay?team.primary:"rgba(255,255,255,0.55)"}}>{pct}</td>
-                  <td style={{textAlign:"center",padding:"1.2vw 0.8vw",fontFamily:"'Courier New',monospace",fontSize:"0.95vw",color:"rgba(255,255,255,0.4)"}}>{gb}</td>
+                  <td style={{textAlign:"center",padding:"1.2vw 0.8vw",fontFamily:"'Courier New',monospace",fontSize:"0.95vw",color:"rgba(255,255,255,0.62)"}}>{gb}</td>
                 </tr>
               );
             })}
@@ -560,7 +592,7 @@ function ValkyriasStandingsSlide({onHome}) {
           <TeamLogo src={team.logo} size="2.5vw" fallbackText="GSV"/>
           <div>
             <div style={{fontSize:"1.1vw",fontWeight:900,color:team.primary}}>{team.fullName}</div>
-            <div style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.4)",fontFamily:"'Courier New',monospace",letterSpacing:"0.15em",textTransform:"uppercase"}}>IN SEASON · 2025-26</div>
+            <div style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.62)",fontFamily:"'Courier New',monospace",letterSpacing:"0.15em",textTransform:"uppercase"}}>IN SEASON · 2025-26</div>
           </div>
         </div>
         <HomeBtn onClick={onHome}/>
@@ -569,7 +601,7 @@ function ValkyriasStandingsSlide({onHome}) {
         {/* Next game */}
         <div style={{background:`${team.primary}15`,border:`1px solid ${team.primary}44`,borderRadius:4,padding:"1vw 1.5vw",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"1vw"}}>
           <div>
-            <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:"rgba(255,255,255,0.4)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.3vw"}}>Next Game · Chase Center</div>
+            <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:"rgba(255,255,255,0.62)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.3vw"}}>Next Game · Chase Center</div>
             <div style={{fontSize:"1.6vw",fontWeight:900,color:"#fff"}}><span style={{color:team.primary}}>Valkyries</span> vs Portland Fire</div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
@@ -585,7 +617,7 @@ function ValkyriasStandingsSlide({onHome}) {
           <thead>
             <tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
               {["#","Team","W","L","PCT","GB"].map((h,i)=>(
-                <th key={h} style={{textAlign:i<2?"left":"center",padding:"0.4vw 0.8vw 0.7vw",color:"rgba(255,255,255,0.3)",fontWeight:400,fontSize:"0.7vw",letterSpacing:"0.15em",fontFamily:"'Courier New',monospace",textTransform:"uppercase"}}>{h}</th>
+                <th key={h} style={{textAlign:i<2?"left":"center",padding:"0.4vw 0.8vw 0.7vw",color:"rgba(255,255,255,0.55)",fontWeight:400,fontSize:"0.7vw",letterSpacing:"0.15em",fontFamily:"'Courier New',monospace",textTransform:"uppercase"}}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -596,15 +628,15 @@ function ValkyriasStandingsSlide({onHome}) {
               const gb=i===0?"—":(((leader.w-t.w)+(t.l-leader.l))/2).toFixed(1);
               return (
                 <tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:isBay?`${team.primary}18`:"transparent",outline:isBay?`1px solid ${team.primary}44`:"none",outlineOffset:"-1px"}}>
-                  <td style={{padding:"1vw 0.8vw",color:isBay?team.primary:"rgba(255,255,255,0.3)",fontSize:"1vw",fontFamily:"'Courier New',monospace",fontWeight:isBay?700:400}}>{t.rank}</td>
+                  <td style={{padding:"1vw 0.8vw",color:isBay?team.primary:"rgba(255,255,255,0.55)",fontSize:"1vw",fontFamily:"'Courier New',monospace",fontWeight:isBay?700:400}}>{t.rank}</td>
                   <td style={{padding:"1vw 0.8vw",fontSize:"1.3vw",fontWeight:isBay?900:500,color:isBay?"#fff":"rgba(255,255,255,0.75)"}}>
                     {t.name}
                     {isBay&&<span style={{marginLeft:"0.6vw",fontSize:"0.65vw",color:team.primary,fontFamily:"'Courier New',monospace"}}>YOUR TEAM</span>}
                   </td>
                   <td style={{textAlign:"center",padding:"1vw 0.8vw",fontSize:"1.4vw",fontWeight:700,color:isBay?"#fff":"rgba(255,255,255,0.7)"}}>{t.w}</td>
-                  <td style={{textAlign:"center",padding:"1vw 0.8vw",fontSize:"1.4vw",color:"rgba(255,255,255,0.45)"}}>{t.l}</td>
+                  <td style={{textAlign:"center",padding:"1vw 0.8vw",fontSize:"1.4vw",color:"rgba(255,255,255,0.65)"}}>{t.l}</td>
                   <td style={{textAlign:"center",padding:"1vw 0.8vw",fontFamily:"'Courier New',monospace",fontSize:"0.95vw",color:isBay?team.primary:"rgba(255,255,255,0.55)"}}>{pct}</td>
-                  <td style={{textAlign:"center",padding:"1vw 0.8vw",fontFamily:"'Courier New',monospace",fontSize:"0.95vw",color:"rgba(255,255,255,0.4)"}}>{gb}</td>
+                  <td style={{textAlign:"center",padding:"1vw 0.8vw",fontFamily:"'Courier New',monospace",fontSize:"0.95vw",color:"rgba(255,255,255,0.62)"}}>{gb}</td>
                 </tr>
               );
             })}
@@ -663,7 +695,7 @@ function StandingsCarousel({onHome}) {
             return (
               <button key={key} onClick={()=>go(i)} style={{display:"flex",alignItems:"center",gap:"0.4vw",background:isActive?`${t.primary}33`:"rgba(255,255,255,0.04)",border:`1px solid ${isActive?t.primary:"rgba(255,255,255,0.1)"}`,borderRadius:3,padding:"0.3vw 0.8vw",cursor:"pointer",transition:"all 0.2s"}}>
                 <TeamLogo src={t.logo} size="1.4vw" fallbackText={t.name.slice(0,2)}/>
-                <span style={{fontSize:"0.7vw",fontFamily:"'Courier New',monospace",color:isActive?t.primary:"rgba(255,255,255,0.4)",fontWeight:isActive?700:400}}>{t.name}</span>
+                <span style={{fontSize:"0.7vw",fontFamily:"'Courier New',monospace",color:isActive?t.primary:"rgba(255,255,255,0.62)",fontWeight:isActive?700:400}}>{t.name}</span>
               </button>
             );
           })}
@@ -695,10 +727,138 @@ function Diamond({onBase}) {
 function DotGroup({count,total,activeColor,label}) {
   return (
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"0.4vw"}}>
-      <div style={{fontSize:"0.65vw",letterSpacing:"0.16em",color:"rgba(255,255,255,0.3)",textTransform:"uppercase",fontFamily:"'Courier New',monospace"}}>{label}</div>
+      <div style={{fontSize:"0.65vw",letterSpacing:"0.16em",color:"rgba(255,255,255,0.55)",textTransform:"uppercase",fontFamily:"'Courier New',monospace"}}>{label}</div>
       <div style={{display:"flex",gap:"0.4vw"}}>
         {Array.from({length:total}).map((_,i)=>(
           <div key={i} style={{width:"0.9vw",height:"0.9vw",borderRadius:"50%",background:i<count?activeColor:"rgba(255,255,255,0.1)",border:`1.5px solid ${i<count?activeColor:"rgba(255,255,255,0.2)"}`,boxShadow:i<count?`0 0 7px ${activeColor}88`:"none",transition:"all 0.25s"}}/>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GiantsScoreboardMobile({onHome,game,sfAbbr,oppAbbr,giantsIsHome,giantsIsAway,giantsWinning,homeAbbr,awayAbbr,homeScore,awayScore}) {
+  const O="#FD5A1E";
+  const inningLabel = game.inning===1?"1st":game.inning===2?"2nd":game.inning===3?"3rd":`${game.inning}th`;
+  const Side = ({name,id,abbr,score,isG,winning}) => (
+    <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"center",gap:"1.5vw"}}>
+      <TeamLogo src={`https://www.mlbstatic.com/team-logos/${id}.svg`} size="11vw" fallbackText={abbr}/>
+      <div style={{fontSize:"3.6vw",fontWeight:800,color:isG?O:"rgba(255,255,255,0.85)",textAlign:"center",lineHeight:1.1}}>{name}</div>
+      <div style={{fontSize:"17vw",fontWeight:900,lineHeight:1,fontVariantNumeric:"tabular-nums",color:isG?O:"rgba(255,255,255,0.92)",textShadow:(isG&&winning)?`0 0 8vw rgba(253,90,30,0.5)`:"none"}}>{score}</div>
+    </div>
+  );
+  return (
+    <div style={{position:"fixed",inset:0,background:`radial-gradient(ellipse at 50% 0%,#3d1c09 0%,#27251F 55%)`,fontFamily:"Georgia,serif",color:"#fff",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{height:"1vw",background:`linear-gradient(90deg,${O},#c94510)`,flexShrink:0}}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3vw 4vw",borderBottom:"1px solid rgba(255,255,255,0.1)",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:"2vw"}}>
+          <div style={{width:"2.4vw",height:"2.4vw",borderRadius:"50%",background:"#2ecc71",boxShadow:"0 0 10px #2ecc71",animation:"livePulse 1.8s ease-in-out infinite"}}/>
+          <span style={{fontSize:"3vw",letterSpacing:"0.15em",color:"#2ecc71",fontFamily:"'Courier New',monospace",textTransform:"uppercase"}}>Live · Giants</span>
+        </div>
+        <button onClick={onHome} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",color:"rgba(255,255,255,0.8)",padding:"1.6vw 3.5vw",borderRadius:4,fontSize:"3vw",fontFamily:"'Courier New',monospace",letterSpacing:"0.08em",cursor:"pointer",textTransform:"uppercase"}}>Home</button>
+      </div>
+      <div style={{flex:1,minHeight:0,overflowY:"auto",padding:"5vw 4vw",WebkitOverflowScrolling:"touch"}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"5vw"}}>
+          <Side name={game.awayTeamName} id={game.awayTeamId} abbr={awayAbbr} score={awayScore} isG={giantsIsAway} winning={giantsWinning}/>
+          <div style={{flexShrink:0,padding:"3vw 1vw 0",display:"flex",flexDirection:"column",alignItems:"center",gap:"1vw"}}>
+            <span style={{fontSize:"4vw",color:"rgba(255,255,255,0.35)",fontWeight:900}}>–</span>
+            <span style={{fontSize:"3vw",color:"rgba(255,255,255,0.6)",fontFamily:"'Courier New',monospace",whiteSpace:"nowrap"}}>{game.inningHalf==="top"?"\u25B2":"\u25BC"} {inningLabel}</span>
+          </div>
+          <Side name={game.homeTeamName} id={game.homeTeamId} abbr={homeAbbr} score={homeScore} isG={giantsIsHome} winning={giantsWinning}/>
+        </div>
+        {game.atBat&&(
+          <div style={{background:"rgba(253,90,30,0.1)",border:"1px solid rgba(253,90,30,0.3)",borderRadius:6,padding:"3.5vw 4vw",textAlign:"center",marginBottom:"4vw"}}>
+            <div style={{fontSize:"2.8vw",letterSpacing:"0.16em",color:"rgba(255,255,255,0.55)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"1.5vw"}}>At Bat</div>
+            <div style={{fontSize:"5vw",fontWeight:800,color:"#fff"}}>{game.atBat.name}</div>
+            <div style={{display:"flex",justifyContent:"center",gap:"2vw",marginTop:"1.5vw"}}>
+              <span style={{fontSize:"3vw",color:O,fontFamily:"'Courier New',monospace",background:"rgba(253,90,30,0.18)",padding:"0.6vw 2vw",borderRadius:3}}>{game.atBat.position}</span>
+              <span style={{fontSize:"3vw",color:"rgba(255,255,255,0.5)",fontFamily:"'Courier New',monospace"}}>{game.atBat.h}-for-{game.atBat.ab}</span>
+            </div>
+          </div>
+        )}
+        {game.count!=null&&(
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-around",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,padding:"3.5vw 2vw",marginBottom:"4vw"}}>
+            <MobileDots count={game.count.balls} total={4} color="#4caf50" label="Balls"/>
+            <MobileDots count={game.count.strikes} total={3} color="#e05252" label="Strikes"/>
+            <MobileDots count={game.outs} total={3} color="#e8b84b" label="Outs"/>
+            {game.onBase&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"1.2vw"}}><div style={{fontSize:"2.6vw",letterSpacing:"0.12em",color:"rgba(255,255,255,0.5)",textTransform:"uppercase",fontFamily:"'Courier New',monospace"}}>Bases</div><Diamond onBase={game.onBase}/></div>}
+          </div>
+        )}
+        <div style={{marginBottom:"4vw"}}>
+          <div style={{fontSize:"2.8vw",letterSpacing:"0.18em",color:"rgba(255,255,255,0.5)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"1.5vw"}}>Linescore</div>
+          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+            <table style={{borderCollapse:"collapse",fontFamily:"'Courier New',monospace",minWidth:"100%"}}>
+              <thead><tr>
+                <th style={{textAlign:"left",padding:"1vw 2vw 1.5vw 0",color:"rgba(255,255,255,0.55)",fontWeight:400,fontSize:"2.8vw"}}>TEAM</th>
+                {Object.keys(game.scoring_by_period||{}).map(i=><th key={i} style={{textAlign:"center",padding:"1vw 1.5vw",color:"rgba(255,255,255,0.55)",fontWeight:400,fontSize:"2.8vw"}}>{i}</th>)}
+                {["R","H","E"].map((h,hi)=><th key={h} style={{textAlign:"center",padding:"1vw 1.5vw",color:"rgba(255,255,255,0.55)",fontWeight:400,fontSize:"2.8vw",borderLeft:hi===0?"1px solid rgba(255,255,255,0.12)":"none"}}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {[awayAbbr,homeAbbr].map((abbr)=>(
+                  <tr key={abbr} style={{borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+                    <td style={{padding:"1.5vw 2vw 1.5vw 0",fontWeight:700,fontSize:"3.4vw",color:abbr===sfAbbr?O:"rgba(255,255,255,0.7)"}}>{abbr}</td>
+                    {Object.entries(game.scoring_by_period||{}).map(([inn,vals])=>{const val=vals[abbr],isX=val==="X";return <td key={inn} style={{textAlign:"center",padding:"1.5vw 1.5vw",fontSize:"3vw",color:isX?"rgba(255,255,255,0.25)":val>0?"#fff":"rgba(255,255,255,0.5)",fontWeight:val>0?700:400}}>{isX?"\u2014":val??"\u00B7"}</td>;})}
+                    <td style={{textAlign:"center",padding:"1.5vw 1.5vw",fontWeight:800,fontSize:"3.6vw",color:"#fff",borderLeft:"1px solid rgba(255,255,255,0.12)"}}>{game.rhe?.[abbr]?.runs??""}</td>
+                    <td style={{textAlign:"center",padding:"1.5vw 1.5vw",color:"rgba(255,255,255,0.75)",fontSize:"3vw"}}>{game.rhe?.[abbr]?.hits??""}</td>
+                    <td style={{textAlign:"center",padding:"1.5vw 1.5vw",color:(game.rhe?.[abbr]?.errors??0)>0?"#e74c3c":"rgba(255,255,255,0.5)",fontSize:"3vw"}}>{game.rhe?.[abbr]?.errors??""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div style={{marginBottom:"4vw"}}>
+          <div style={{fontSize:"2.8vw",letterSpacing:"0.18em",color:O,opacity:0.85,textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"1.5vw"}}>Giants Batting</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Courier New',monospace"}}>
+            <thead><tr>{["Player","AB","H","HR","RBI","R"].map(h=><th key={h} style={{textAlign:h==="Player"?"left":"center",padding:"0.8vw 1vw 1.5vw",color:"rgba(255,255,255,0.5)",fontWeight:400,fontSize:"2.6vw"}}>{h}</th>)}</tr></thead>
+            <tbody>
+              {(game.batters?.[sfAbbr]||[]).map((p,i)=>{const isUp=game.atBat?.name===p.name;return(
+                <tr key={i} style={{borderTop:"1px solid rgba(255,255,255,0.06)",background:isUp?"rgba(253,90,30,0.1)":"transparent"}}>
+                  <td style={{padding:"1.5vw 1vw 1.5vw 0",color:"#fff",fontSize:"3vw"}}>
+                    {isUp&&<span style={{display:"inline-block",width:"1.6vw",height:"1.6vw",borderRadius:"50%",background:O,marginRight:"1.2vw",verticalAlign:"middle"}}/>}
+                    <span style={{color:"rgba(255,255,255,0.5)",marginRight:"1.2vw",fontSize:"2.6vw"}}>{p.position}</span>{p.name}
+                  </td>
+                  {[p.ab,p.h,p.hr,p.rbi,p.r].map((v,j)=><td key={j} style={{textAlign:"center",padding:"1.5vw 1vw",fontSize:"3vw",color:j===2||j===3?(v||0)>0?O:"rgba(255,255,255,0.3)":(v||0)>0?"#fff":"rgba(255,255,255,0.4)",fontWeight:(v||0)>0&&j>0?700:400}}>{j>0?(v||"\u2014"):v}</td>)}
+                </tr>
+              );})}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div style={{fontSize:"2.8vw",letterSpacing:"0.18em",color:O,opacity:0.85,textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"1.5vw"}}>Pitching</div>
+          {[{label:sfAbbr===homeAbbr?game.homeTeamName:game.awayTeamName,key:sfAbbr},{label:oppAbbr===homeAbbr?game.homeTeamName:game.awayTeamName,key:oppAbbr}].map(({label,key})=>(
+            <div key={key} style={{marginBottom:key===sfAbbr?"3vw":0}}>
+              <div style={{fontSize:"2.6vw",color:"rgba(255,255,255,0.5)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"1vw",letterSpacing:"0.08em"}}>{label}</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Courier New',monospace"}}>
+                <thead><tr>{["Pitcher","IP","K","BB","ER"].map(h=><th key={h} style={{textAlign:h==="Pitcher"?"left":"center",padding:"0.8vw 1vw 1vw",color:"rgba(255,255,255,0.5)",fontWeight:400,fontSize:"2.6vw"}}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {(game.pitchers?.[key]||[]).map((p,i)=>(
+                    <tr key={i} style={{borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+                      <td style={{padding:"1.3vw 1vw 1.3vw 0",color:key===sfAbbr?"#fff":"rgba(255,255,255,0.65)",fontSize:"3vw"}}>
+                        {p.status==="active"&&<span style={{display:"inline-block",width:"1.6vw",height:"1.6vw",borderRadius:"50%",background:"#2ecc71",marginRight:"1.2vw",verticalAlign:"middle"}}/>}
+                        {p.name}
+                      </td>
+                      {[p.ip,p.k,p.bb,p.er].map((v,j)=><td key={j} style={{textAlign:"center",padding:"1.3vw 1vw",fontSize:"3vw",color:j===3&&v>0?"#e74c3c":j===2&&v>3?"#e74c3c":"rgba(255,255,255,0.6)"}}>{v??0}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      </div>
+      <style>{`@keyframes livePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}`}</style>
+    </div>
+  );
+}
+
+function MobileDots({count,total,color,label}) {
+  return (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"1.2vw"}}>
+      <div style={{fontSize:"2.6vw",letterSpacing:"0.1em",color:"rgba(255,255,255,0.5)",textTransform:"uppercase",fontFamily:"'Courier New',monospace"}}>{label}</div>
+      <div style={{display:"flex",gap:"1.2vw"}}>
+        {Array.from({length:total}).map((_,i)=>(
+          <div key={i} style={{width:"2.6vw",height:"2.6vw",borderRadius:"50%",background:i<count?color:"rgba(255,255,255,0.1)",border:`1.5px solid ${i<count?color:"rgba(255,255,255,0.25)"}`,boxShadow:i<count?`0 0 6px ${color}88`:"none"}}/>
         ))}
       </div>
     </div>
@@ -709,6 +869,7 @@ function GiantsScoreboard({onHome}) {
   const [gdata,setGdata]=useState(null);
   const [refreshing,setRefreshing]=useState(true);
   const [lastUpdate,setLastUpdate]=useState(null);
+  const isPhone=useIsPhone();
   const team=TEAMS.giants;
   const O=team.primary;
 
@@ -731,11 +892,18 @@ function GiantsScoreboard({onHome}) {
   const oppAbbr  = homeAbbr==="SF" ? awayAbbr : homeAbbr;
   const sfTeamName  = homeAbbr==="SF" ? game?.homeTeamName : game?.awayTeamName;
   const oppTeamName = homeAbbr==="SF" ? game?.awayTeamName : game?.homeTeamName;
+  // Which physical side (away/home) is the Giants — drives colors & glow, not layout order
+  const giantsIsHome = homeAbbr==="SF";
+  const giantsIsAway = awayAbbr==="SF";
+  const giantsWinning = giantsIsHome ? homeScore>awayScore : awayScore>homeScore;
 
   if(!gdata) return <div style={{height:"100vh",background:"#27251F",display:"flex",alignItems:"center",justifyContent:"center",color:O,fontSize:"1.2vw",fontFamily:"'Courier New',monospace",letterSpacing:"0.2em"}}>LOADING…</div>;
 
   // If no live game, show standings
   if(!isLive) return <GiantsStandingsSlide onHome={onHome}/>;
+
+  // Phone (portrait) gets a dedicated stacked layout
+  if(isPhone) return <GiantsScoreboardMobile onHome={onHome} game={game} sfAbbr={sfAbbr} oppAbbr={oppAbbr} giantsIsHome={giantsIsHome} giantsIsAway={giantsIsAway} giantsWinning={giantsWinning} homeAbbr={homeAbbr} awayAbbr={awayAbbr} homeScore={homeScore} awayScore={awayScore}/>;
 
   return (
     <div style={{position:"fixed",inset:0,background:`radial-gradient(ellipse at 20% 0%,#3d1c09 0%,#27251F 50%)`,fontFamily:"Georgia,serif",color:"#fff",display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -746,7 +914,7 @@ function GiantsScoreboard({onHome}) {
           <span style={{fontSize:"0.8vw",letterSpacing:"0.2em",color:"#2ecc71",fontFamily:"'Courier New',monospace",textTransform:"uppercase"}}>Live · SF Giants</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:"1vw"}}>
-          <span style={{fontSize:"0.8vw",color:"rgba(255,255,255,0.25)",fontFamily:"'Courier New',monospace"}}>{refreshing?"Refreshing…":lastUpdate?`Updated ${lastUpdate.toLocaleTimeString()}`:""}</span>
+          <span style={{fontSize:"0.8vw",color:"rgba(255,255,255,0.5)",fontFamily:"'Courier New',monospace"}}>{refreshing?"Refreshing…":lastUpdate?`Updated ${lastUpdate.toLocaleTimeString()}`:""}</span>
           <button onClick={refresh} disabled={refreshing} style={{background:"transparent",border:`1px solid rgba(253,90,30,0.35)`,color:O,padding:"0.3vw 1vw",borderRadius:2,fontSize:"0.65vw",fontFamily:"'Courier New',monospace",cursor:"pointer",textTransform:"uppercase"}}>{refreshing?"…":"Refresh"}</button>
           <HomeBtn onClick={onHome}/>
         </div>
@@ -756,26 +924,26 @@ function GiantsScoreboard({onHome}) {
         {/* Score */}
         <div style={{display:"flex",alignItems:"center",marginBottom:"1.4vw"}}>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:"0.65vw",letterSpacing:"0.15em",color:"rgba(255,255,255,0.4)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.3vw"}}>Away</div>
+            <div style={{fontSize:"0.65vw",letterSpacing:"0.15em",color:"rgba(255,255,255,0.62)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.3vw"}}>Away</div>
             <div style={{display:"flex",alignItems:"center",gap:"0.8vw",marginBottom:"0.5vw"}}>
               <TeamLogo src={`https://www.mlbstatic.com/team-logos/${game.awayTeamId}.svg`} size="2.5vw" fallbackText={awayAbbr}/>
-              <div style={{fontSize:"1.2vw",fontWeight:700,color:"rgba(255,255,255,0.55)"}}>{game.awayTeamName}</div>
+              <div style={{fontSize:"1.35vw",fontWeight:800,color:giantsIsAway?O:"rgba(255,255,255,0.85)"}}>{game.awayTeamName}</div>
             </div>
-            <div style={{fontSize:"7vw",fontWeight:900,lineHeight:1,color:"rgba(255,255,255,0.75)",letterSpacing:"-0.03em",fontVariantNumeric:"tabular-nums"}}>{awayScore}</div>
+            <div style={{fontSize:"7vw",fontWeight:900,lineHeight:1,color:giantsIsAway?O:"rgba(255,255,255,0.9)",letterSpacing:"-0.03em",fontVariantNumeric:"tabular-nums",textShadow:(giantsIsAway&&giantsWinning)?`0 0 4vw rgba(253,90,30,0.5)`:"none"}}>{awayScore}</div>
           </div>
           {/* Situation panel */}
           <div style={{width:"18vw",flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:"0.7vw",padding:"0 1.4vw"}}>
             <div style={{display:"flex",alignItems:"center",gap:"0.4vw"}}>
-              <span style={{fontSize:"1.05vw",color:"rgba(255,255,255,0.4)",fontFamily:"'Courier New',monospace"}}>{game.inningHalf==="top"?"▲":"▼"}</span>
+              <span style={{fontSize:"1.05vw",color:"rgba(255,255,255,0.62)",fontFamily:"'Courier New',monospace"}}>{game.inningHalf==="top"?"▲":"▼"}</span>
               <span style={{fontSize:"1.05vw",fontWeight:700,color:"rgba(255,255,255,0.65)",fontFamily:"'Courier New',monospace"}}>{game.inning===1?"1st":game.inning===2?"2nd":game.inning===3?"3rd":`${game.inning}th`} Inning</span>
             </div>
             {game.atBat&&(
               <div style={{width:"100%",boxSizing:"border-box",background:"rgba(253,90,30,0.08)",border:"1px solid rgba(253,90,30,0.25)",borderRadius:3,padding:"0.8vw 1.2vw",textAlign:"center"}}>
-                <div style={{fontSize:"0.65vw",letterSpacing:"0.18em",color:"rgba(255,255,255,0.3)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.3vw"}}>At Bat</div>
+                <div style={{fontSize:"0.65vw",letterSpacing:"0.18em",color:"rgba(255,255,255,0.55)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.3vw"}}>At Bat</div>
                 <div style={{fontSize:"1.2vw",fontWeight:800,color:"#fff"}}>{game.atBat.name}</div>
                 <div style={{display:"flex",justifyContent:"center",gap:"0.5vw",marginTop:"0.4vw"}}>
                   <span style={{fontSize:"0.65vw",color:O,fontFamily:"'Courier New',monospace",background:"rgba(253,90,30,0.15)",padding:"2px 7px",borderRadius:2}}>{game.atBat.position}</span>
-                  <span style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.35)",fontFamily:"'Courier New',monospace"}}>{game.atBat.h}-for-{game.atBat.ab}</span>
+                  <span style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.58)",fontFamily:"'Courier New',monospace"}}>{game.atBat.h}-for-{game.atBat.ab}</span>
                 </div>
               </div>
             )}
@@ -788,37 +956,37 @@ function GiantsScoreboard({onHome}) {
                 <DotGroup count={game.outs} total={3} activeColor="#e8b84b" label="Outs"/>
               </div>
             )}
-            {game.onBase&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"0.3vw"}}><div style={{fontSize:"0.65vw",letterSpacing:"0.16em",color:"rgba(255,255,255,0.3)",textTransform:"uppercase",fontFamily:"'Courier New',monospace"}}>Runners</div><Diamond onBase={game.onBase}/></div>}
+            {game.onBase&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"0.3vw"}}><div style={{fontSize:"0.65vw",letterSpacing:"0.16em",color:"rgba(255,255,255,0.55)",textTransform:"uppercase",fontFamily:"'Courier New',monospace"}}>Runners</div><Diamond onBase={game.onBase}/></div>}
           </div>
           <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"flex-end"}}>
-            <div style={{fontSize:"0.65vw",letterSpacing:"0.15em",color:"rgba(255,255,255,0.4)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.3vw"}}>Home</div>
+            <div style={{fontSize:"0.65vw",letterSpacing:"0.15em",color:"rgba(255,255,255,0.62)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.3vw"}}>Home</div>
             <div style={{display:"flex",alignItems:"center",gap:"0.8vw",marginBottom:"0.5vw"}}>
-              <div style={{fontSize:"1.2vw",fontWeight:700,color:O}}>{game.homeTeamName}</div>
+              <div style={{fontSize:"1.35vw",fontWeight:800,color:giantsIsHome?O:"rgba(255,255,255,0.85)"}}>{game.homeTeamName}</div>
               <TeamLogo src={`https://www.mlbstatic.com/team-logos/${game.homeTeamId}.svg`} size="2.5vw" fallbackText={homeAbbr}/>
             </div>
-            <div style={{fontSize:"7vw",fontWeight:900,lineHeight:1,letterSpacing:"-0.03em",fontVariantNumeric:"tabular-nums",color:O,textShadow:homeScore>awayScore?`0 0 4vw rgba(253,90,30,0.5)`:"none"}}>{homeScore}</div>
+            <div style={{fontSize:"7vw",fontWeight:900,lineHeight:1,letterSpacing:"-0.03em",fontVariantNumeric:"tabular-nums",color:giantsIsHome?O:"rgba(255,255,255,0.9)",textShadow:(giantsIsHome&&giantsWinning)?`0 0 4vw rgba(253,90,30,0.5)`:"none"}}>{homeScore}</div>
           </div>
         </div>
         <div style={{height:1,background:"rgba(255,255,255,0.07)",marginBottom:"1.4vw"}}/>
         {/* Linescore */}
         <div style={{marginBottom:"1.4vw"}}>
-          <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:"rgba(255,255,255,0.3)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.5vw"}}>Linescore</div>
+          <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:"rgba(255,255,255,0.55)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.5vw"}}>Linescore</div>
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr>
-              <th style={{textAlign:"left",padding:"0.3vw 1vw 0.5vw 0.3vw",color:"rgba(255,255,255,0.4)",fontWeight:400,fontSize:"0.65vw",fontFamily:"'Courier New',monospace"}}>TEAM</th>
-              {Object.keys(game.scoring_by_period||{}).map(i=><th key={i} style={{textAlign:"center",padding:"0.3vw 0.5vw",color:"rgba(255,255,255,0.4)",fontWeight:400,fontSize:"0.65vw",fontFamily:"'Courier New',monospace",width:"2vw"}}>{i}</th>)}
-              <th style={{textAlign:"center",padding:"0.3vw 0.8vw",color:"rgba(255,255,255,0.4)",fontWeight:400,fontSize:"0.65vw",fontFamily:"'Courier New',monospace",borderLeft:"1px solid rgba(255,255,255,0.1)"}}>R</th>
-              <th style={{textAlign:"center",padding:"0.3vw 0.8vw",color:"rgba(255,255,255,0.4)",fontWeight:400,fontSize:"0.65vw",fontFamily:"'Courier New',monospace"}}>H</th>
-              <th style={{textAlign:"center",padding:"0.3vw 0.8vw",color:"rgba(255,255,255,0.4)",fontWeight:400,fontSize:"0.65vw",fontFamily:"'Courier New',monospace"}}>E</th>
+              <th style={{textAlign:"left",padding:"0.3vw 1vw 0.5vw 0.3vw",color:"rgba(255,255,255,0.62)",fontWeight:400,fontSize:"0.65vw",fontFamily:"'Courier New',monospace"}}>TEAM</th>
+              {Object.keys(game.scoring_by_period||{}).map(i=><th key={i} style={{textAlign:"center",padding:"0.3vw 0.5vw",color:"rgba(255,255,255,0.62)",fontWeight:400,fontSize:"0.65vw",fontFamily:"'Courier New',monospace",width:"2vw"}}>{i}</th>)}
+              <th style={{textAlign:"center",padding:"0.3vw 0.8vw",color:"rgba(255,255,255,0.62)",fontWeight:400,fontSize:"0.65vw",fontFamily:"'Courier New',monospace",borderLeft:"1px solid rgba(255,255,255,0.1)"}}>R</th>
+              <th style={{textAlign:"center",padding:"0.3vw 0.8vw",color:"rgba(255,255,255,0.62)",fontWeight:400,fontSize:"0.65vw",fontFamily:"'Courier New',monospace"}}>H</th>
+              <th style={{textAlign:"center",padding:"0.3vw 0.8vw",color:"rgba(255,255,255,0.62)",fontWeight:400,fontSize:"0.65vw",fontFamily:"'Courier New',monospace"}}>E</th>
             </tr></thead>
             <tbody>
               {[awayAbbr,homeAbbr].map((abbr,ti)=>(
                 <tr key={abbr} style={{borderTop:"1px solid rgba(255,255,255,0.07)"}}>
-                  <td style={{padding:"0.5vw 1vw 0.5vw 0.3vw",fontWeight:700,fontSize:"0.95vw",fontFamily:"'Courier New',monospace",color:ti===1?O:"rgba(255,255,255,0.55)"}}>{abbr}</td>
-                  {Object.entries(game.scoring_by_period||{}).map(([inn,vals])=>{const val=vals[abbr],isX=val==="X";return <td key={inn} style={{textAlign:"center",padding:"0.5vw 0.5vw",fontFamily:"'Courier New',monospace",fontSize:"0.8vw",color:isX?"rgba(255,255,255,0.2)":val>0?"#fff":"rgba(255,255,255,0.4)",fontWeight:val>0?700:400}}>{isX?"—":val??"·"}</td>;})}
+                  <td style={{padding:"0.5vw 1vw 0.5vw 0.3vw",fontWeight:700,fontSize:"0.95vw",fontFamily:"'Courier New',monospace",color:abbr===sfAbbr?O:"rgba(255,255,255,0.55)"}}>{abbr}</td>
+                  {Object.entries(game.scoring_by_period||{}).map(([inn,vals])=>{const val=vals[abbr],isX=val==="X";return <td key={inn} style={{textAlign:"center",padding:"0.5vw 0.5vw",fontFamily:"'Courier New',monospace",fontSize:"0.8vw",color:isX?"rgba(255,255,255,0.2)":val>0?"#fff":"rgba(255,255,255,0.62)",fontWeight:val>0?700:400}}>{isX?"—":val??"·"}</td>;})}
                   <td style={{textAlign:"center",padding:"0.5vw 0.8vw",fontWeight:800,fontSize:"1.1vw",color:"#fff",fontFamily:"'Courier New',monospace",borderLeft:"1px solid rgba(255,255,255,0.1)"}}>{game.rhe?.[abbr]?.runs??""}</td>
                   <td style={{textAlign:"center",padding:"0.5vw 0.8vw",color:"rgba(255,255,255,0.7)",fontFamily:"'Courier New',monospace",fontSize:"0.8vw"}}>{game.rhe?.[abbr]?.hits??""}</td>
-                  <td style={{textAlign:"center",padding:"0.5vw 0.8vw",color:(game.rhe?.[abbr]?.errors??0)>0?"#e74c3c":"rgba(255,255,255,0.4)",fontFamily:"'Courier New',monospace",fontSize:"0.8vw"}}>{game.rhe?.[abbr]?.errors??""}</td>
+                  <td style={{textAlign:"center",padding:"0.5vw 0.8vw",color:(game.rhe?.[abbr]?.errors??0)>0?"#e74c3c":"rgba(255,255,255,0.62)",fontFamily:"'Courier New',monospace",fontSize:"0.8vw"}}>{game.rhe?.[abbr]?.errors??""}</td>
                 </tr>
               ))}
             </tbody>
@@ -830,15 +998,15 @@ function GiantsScoreboard({onHome}) {
           <div>
             <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:O,opacity:0.7,textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.5vw"}}>Giants Batting</div>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:"0.8vw",fontFamily:"'Courier New',monospace"}}>
-              <thead><tr>{["Player","AB","H","HR","RBI","R"].map(h=><th key={h} style={{textAlign:h==="Player"?"left":"center",padding:"0.2vw 0.3vw 0.4vw",color:"rgba(255,255,255,0.3)",fontWeight:400,fontSize:"0.65vw"}}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Player","AB","H","HR","RBI","R"].map(h=><th key={h} style={{textAlign:h==="Player"?"left":"center",padding:"0.2vw 0.3vw 0.4vw",color:"rgba(255,255,255,0.55)",fontWeight:400,fontSize:"0.65vw"}}>{h}</th>)}</tr></thead>
               <tbody>
                 {(game.batters?.[sfAbbr]||[]).map((p,i)=>{const isUp=game.atBat?.name===p.name;return(
                   <tr key={i} style={{borderTop:"1px solid rgba(255,255,255,0.05)",background:isUp?"rgba(253,90,30,0.08)":"transparent"}}>
                     <td style={{padding:"0.4vw 0.4vw 0.4vw 0",color:"#fff"}}>
                       {isUp&&<span style={{display:"inline-block",width:"0.5vw",height:"0.5vw",borderRadius:"50%",background:O,marginRight:"0.4vw",verticalAlign:"middle",boxShadow:`0 0 5px ${O}`}}/>}
-                      <span style={{color:"rgba(255,255,255,0.4)",marginRight:"0.4vw",fontSize:"0.65vw"}}>{p.position}</span>{p.name}
+                      <span style={{color:"rgba(255,255,255,0.62)",marginRight:"0.4vw",fontSize:"0.65vw"}}>{p.position}</span>{p.name}
                     </td>
-                    {[p.ab,p.h,p.hr,p.rbi,p.r].map((v,j)=><td key={j} style={{textAlign:"center",padding:"0.4vw 0.3vw",color:j===2||j===3?(v||0)>0?O:"rgba(255,255,255,0.2)":(v||0)>0?"#fff":"rgba(255,255,255,0.3)",fontWeight:(v||0)>0&&j>0?700:400}}>{j>0?(v||"—"):v}</td>)}
+                    {[p.ab,p.h,p.hr,p.rbi,p.r].map((v,j)=><td key={j} style={{textAlign:"center",padding:"0.4vw 0.3vw",color:j===2||j===3?(v||0)>0?O:"rgba(255,255,255,0.2)":(v||0)>0?"#fff":"rgba(255,255,255,0.55)",fontWeight:(v||0)>0&&j>0?700:400}}>{j>0?(v||"—"):v}</td>)}
                   </tr>
                 );})}
               </tbody>
@@ -847,14 +1015,14 @@ function GiantsScoreboard({onHome}) {
           <div style={{borderLeft:"1px solid rgba(255,255,255,0.07)",paddingLeft:"1.4vw"}}>
             <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:O,opacity:0.7,textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.5vw"}}>Pitching</div>
             {[{label:sfTeamName,key:sfAbbr},{label:oppTeamName,key:oppAbbr}].map(({label,key})=>(
-              <div key={key} style={{marginBottom:key===homeAbbr?"1vw":0}}>
-                <div style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.35)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.3vw",letterSpacing:"0.1em"}}>{label}</div>
+              <div key={key} style={{marginBottom:key===sfAbbr?"1vw":0}}>
+                <div style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.58)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.3vw",letterSpacing:"0.1em"}}>{label}</div>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:"0.8vw",fontFamily:"'Courier New',monospace"}}>
-                  <thead><tr>{["Pitcher","IP","K","BB","ER"].map(h=><th key={h} style={{textAlign:h==="Pitcher"?"left":"center",padding:"0.2vw 0.3vw 0.3vw",color:"rgba(255,255,255,0.3)",fontWeight:400,fontSize:"0.65vw"}}>{h}</th>)}</tr></thead>
+                  <thead><tr>{["Pitcher","IP","K","BB","ER"].map(h=><th key={h} style={{textAlign:h==="Pitcher"?"left":"center",padding:"0.2vw 0.3vw 0.3vw",color:"rgba(255,255,255,0.55)",fontWeight:400,fontSize:"0.65vw"}}>{h}</th>)}</tr></thead>
                   <tbody>
                     {(game.pitchers?.[key]||[]).map((p,i)=>(
                       <tr key={i} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-                        <td style={{padding:"0.35vw 0.4vw 0.35vw 0",color:key===homeAbbr?"#fff":"rgba(255,255,255,0.6)"}}>
+                        <td style={{padding:"0.35vw 0.4vw 0.35vw 0",color:key===sfAbbr?"#fff":"rgba(255,255,255,0.6)"}}>
                           {p.status==="active"&&<span style={{display:"inline-block",width:"0.5vw",height:"0.5vw",borderRadius:"50%",background:"#2ecc71",marginRight:"0.4vw",verticalAlign:"middle",boxShadow:"0 0 4px #2ecc71"}}/>}
                           {p.name}
                         </td>
