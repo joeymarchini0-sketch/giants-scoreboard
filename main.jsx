@@ -821,13 +821,20 @@ function GiantsScoreboard({onHome}) {
         </div>
         <div style={{height:1,background:"rgba(255,255,255,0.07)",marginBottom:"1.4vw"}}/>
         {/* Batting + Pitching */}
+        {(() => {
+          // Giants might be home OR away — find the right abbr
+          const sfAbbr = Object.keys(game.batters||{}).find(k=>["SF"].includes(k)) || homeAbbr;
+          const oppAbbr = sfAbbr === homeAbbr ? awayAbbr : homeAbbr;
+          const sfTeamName = sfAbbr === homeAbbr ? game.homeTeamName : game.awayTeamName;
+          const oppTeamName = sfAbbr === homeAbbr ? game.awayTeamName : game.homeTeamName;
+          return (
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 1.4vw"}}>
           <div>
             <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:O,opacity:0.7,textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.5vw"}}>Giants Batting</div>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:"0.8vw",fontFamily:"'Courier New',monospace"}}>
               <thead><tr>{["Player","AB","H","HR","RBI","R"].map(h=><th key={h} style={{textAlign:h==="Player"?"left":"center",padding:"0.2vw 0.3vw 0.4vw",color:"rgba(255,255,255,0.3)",fontWeight:400,fontSize:"0.65vw"}}>{h}</th>)}</tr></thead>
               <tbody>
-                {(game.batters?.[homeAbbr]||[]).map((p,i)=>{const isUp=game.atBat?.name===p.name;return(
+                {(game.batters?.[sfAbbr]||[]).map((p,i)=>{const isUp=game.atBat?.name===p.name;return(
                   <tr key={i} style={{borderTop:"1px solid rgba(255,255,255,0.05)",background:isUp?"rgba(253,90,30,0.08)":"transparent"}}>
                     <td style={{padding:"0.4vw 0.4vw 0.4vw 0",color:"#fff"}}>
                       {isUp&&<span style={{display:"inline-block",width:"0.5vw",height:"0.5vw",borderRadius:"50%",background:O,marginRight:"0.4vw",verticalAlign:"middle",boxShadow:`0 0 5px ${O}`}}/>}
@@ -841,7 +848,7 @@ function GiantsScoreboard({onHome}) {
           </div>
           <div style={{borderLeft:"1px solid rgba(255,255,255,0.07)",paddingLeft:"1.4vw"}}>
             <div style={{fontSize:"0.65vw",letterSpacing:"0.2em",color:O,opacity:0.7,textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.5vw"}}>Pitching</div>
-            {[{label:game.homeTeamName,key:homeAbbr},{label:game.awayTeamName,key:awayAbbr}].map(({label,key})=>(
+            {[{label:sfTeamName,key:sfAbbr},{label:oppTeamName,key:oppAbbr}].map(({label,key})=>(
               <div key={key} style={{marginBottom:key===homeAbbr?"1vw":0}}>
                 <div style={{fontSize:"0.65vw",color:"rgba(255,255,255,0.35)",textTransform:"uppercase",fontFamily:"'Courier New',monospace",marginBottom:"0.3vw",letterSpacing:"0.1em"}}>{label}</div>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:"0.8vw",fontFamily:"'Courier New',monospace"}}>
@@ -862,6 +869,8 @@ function GiantsScoreboard({onHome}) {
             ))}
           </div>
         </div>
+          );
+        })()}
       </div>
       <style>{`@keyframes livePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}`}</style>
     </div>
