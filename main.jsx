@@ -31,7 +31,7 @@ const TEAMS = {
     league:"WNBA", division:"Western Conference",
     primary:"#744399", secondary:"#FFC72C",
     logo:"https://a.espncdn.com/combiner/i?img=/i/teamlogos/wnba/500/gsv.png",
-    inSeason:true, abbrevs:["GSV"],
+    inSeason:true, abbrevs:["GS","GSV"], espnId:"129689",
   },
   niners: {
     name:"49ers", fullName:"San Francisco 49ers",
@@ -138,19 +138,57 @@ async function checkAllLiveGames() {
 
   // Non-MLB: check WNBA (Valkyries), NBA (Warriors), NFL (49ers), NHL (Sharks)
   const sportChecks = [
-    { sport:"wnba", teamKey:"valkyries", abbrevs:["GSV"] },
-    { sport:"nba",  teamKey:"warriors",  abbrevs:["GSW","GS"] },
-    { sport:"nfl",  teamKey:"niners",    abbrevs:["SF","SFO"] },
-    { sport:"nhl",  teamKey:"sharks",    abbrevs:["SJS","SJ"] },
+    { sport:"wnba", teamKey:"valkyries", abbrevs:["GS","GSV"], espnId:"129689" },
+    { sport:"nba",  teamKey:"warriors",  abbrevs:["GSW","GS"], espnId:"" },
+    { sport:"nfl",  teamKey:"niners",    abbrevs:["SF","SFO"], espnId:"" },
+    { sport:"nhl",  teamKey:"sharks",    abbrevs:["SJS","SJ"], espnId:"" },
   ];
 
-  for (const {sport, teamKey, abbrevs} of sportChecks) {
+  // Normalize either a pre-flattened game object OR ESPN's raw scoreboard event
+  // into one consistent shape: {home,away,homeId,awayId,homeName,awayName,homeScore,awayScore,state,period,clock}
+  function normalizeGames(raw) {
+    if (!raw) return [];
+    // Already an array of flat game objects?
+    const arr = Array.isArray(raw) ? raw : (raw.events || raw.games || []);
+    return arr.map(g => {
+      // ESPN raw event shape
+      if (g.competitions || g.competitors) {
+        const comp = g.competitions ? g.competitions[0] : g;
+        const cs = comp.competitors || [];
+        const h = cs.find(c => c.homeAway === "home") || cs[0] || {};
+        const a = cs.find(c => c.homeAway === "away") || cs[1] || {};
+        const st = comp.status || g.status || {};
+        return {
+          home: h.team?.abbreviation, away: a.team?.abbreviation,
+          homeId: String(h.team?.id ?? ""), awayId: String(a.team?.id ?? ""),
+          homeName: h.team?.displayName || h.team?.name,
+          awayName: a.team?.displayName || a.team?.name,
+          homeScore: Number(h.score ?? 0), awayScore: Number(a.score ?? 0),
+          state: st.type?.state, // "pre" | "in" | "post"
+          period: st.period, clock: st.displayClock,
+        };
+      }
+      // Already-flat shape (whatever /api/espn may produce)
+      const state = g.state || (g.status === "inprogress" ? "in" : g.status === "final" ? "post" : g.status);
+      return {
+        home: g.home, away: g.away,
+        homeId: String(g.homeId ?? ""), awayId: String(g.awayId ?? ""),
+        homeName: g.homeName, awayName: g.awayName,
+        homeScore: Number(g.homeScore ?? 0), awayScore: Number(g.awayScore ?? 0),
+        state, period: g.period, clock: g.clock,
+      };
+    });
+  }
+
+  for (const {sport, teamKey, abbrevs, espnId} of sportChecks) {
     try {
-      const games = await espn(sport);
+      const games = normalizeGames(await espn(sport));
       for (const g of games) {
-        const isBayHome = abbrevs.includes(g.home);
-        const isBayAway = abbrevs.includes(g.away);
-        if ((isBayHome || isBayAway) && g.status === "inprogress") {
+        const matches = id => id && espnId && id === espnId;
+        const isBayHome = matches(g.homeId) || abbrevs.includes(g.home);
+        const isBayAway = matches(g.awayId) || abbrevs.includes(g.away);
+        const isLive = g.state === "in" || g.state === "inprogress";
+        if ((isBayHome || isBayAway) && isLive) {
           const isHome = isBayHome;
           const opp = isHome ? g.awayName : g.homeName;
           const bayScore = isHome ? g.homeScore : g.awayScore;
@@ -158,10 +196,12 @@ async function checkAllLiveGames() {
           // Period label per sport
           let situation = "Live";
           if (g.period && g.clock) {
-            const pLabel = sport==="nfl"?`Q${g.period}`:sport==="nhl"?`P${g.period}`:`Q${g.period}`;
+            const pLabel = sport==="nhl"?`P${g.period}`:`Q${g.period}`;
             situation = `${pLabel} ${g.clock}`;
+          } else if (g.period) {
+            situation = sport==="nhl"?`Period ${g.period}`:`Q${g.period}`;
           }
-          live.push({teamKey,opponent:`${isHome?"vs":"at"} ${opp}`,bayScore,oppScore,situation});
+          live.push({teamKey,opponent:`${isHome?"vs":"at"} ${opp||""}`.trim(),bayScore,oppScore,situation});
         }
       }
     } catch(e) { console.error(`${sport} check failed`,e); }
